@@ -1,0 +1,36 @@
+model:
+  provider: custom
+  default: your-model-name
+  base_url: https://your-provider.example/v1
+  api_key: ""
+
+toolsets:
+  - terminal
+  - file
+  - skills
+  - memory
+  - session_search
+
+agent:
+  max_turns: 90
+  tool_use_enforcement: auto
+
+terminal:
+  backend: local
+  cwd: /opt/kemenkumjabar/apps
+  timeout: 180
+  persistent_shell: true
+
+display:
+  show_reasoning: false
+  streaming: false
+  show_cost: false
+  interim_assistant_messages: false
+  final_response_markdown: strip
+
+memory:
+  memory_enabled: true
+  user_profile_enabled: true
+  memory_char_limit: 2200
+  user_char_limit: 1375
+  provider: ""

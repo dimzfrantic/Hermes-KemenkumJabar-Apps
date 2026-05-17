@@ -1,0 +1,112 @@
+{% extends 'base.html' %}
+{% block title %}Detail Tiket{% endblock %}
+
+{% macro status_class(status) -%}
+  {%- set value = (status or '')|upper -%}
+  {%- if value == 'OPEN' -%}status-open
+  {%- elif value == 'IN_PROGRESS' -%}status-progress
+  {%- elif value == 'PENDING' -%}status-pending
+  {%- elif value == 'RESOLVED' -%}status-resolved
+  {%- elif value == 'CLOSED' -%}status-closed
+  {%- else -%}status-open
+  {%- endif -%}
+{%- endmacro %}
+
+{% block content %}
+<div class="hero-banner">
+  <div class="section-head mb-0">
+    <div>
+      <div class="hero-eyebrow"><i class="bi bi-ticket-detailed"></i> Detail Tiket</div>
+      <h1 class="hero-title">{{ ticket.ticket_alias }}</h1>
+      <p class="hero-text">{{ ticket.problem_summary }}</p>
+      <div class="d-flex flex-wrap gap-2 mt-3">
+        <span class="soft-badge mono">{{ ticket.ticket_code }}</span>
+        <span class="soft-badge">{{ ticket_meta.category_label }}</span>
+        <span class="status-pill {{ status_class(ticket.status_cache) }}">{{ ticket.status_cache }}</span>
+      </div>
+    </div>
+    <div class="toolbar-actions">
+      <form method="post" action="{{ url_for('portal.sync_ticket', ticket_id=ticket.id) }}" data-submit-once="true" class="d-inline-block">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-primary" type="submit" data-submit-once-button="true" data-loading-text="<span class='spinner-border spinner-border-sm me-2' role='status' aria-hidden='true'></span>Menyinkronkan...">
+          <i class="bi bi-arrow-repeat me-2"></i>Sinkron
+        </button>
+      </form>
+      <a class="btn btn-outline-secondary" href="{{ url_for('portal.dashboard') }}" data-nav-once="true" data-loading-text="<span class='spinner-border spinner-border-sm me-2' role='status' aria-hidden='true'></span>Kembali...">Kembali</a>
+    </div>
+  </div>
+</div>
+
+<div class="info-grid mb-4">
+  <div class="info-card">
+    <strong>Lokasi</strong>
+    <span>{{ ticket.location }}</span>
+  </div>
+  <div class="info-card">
+    <strong>Kategori</strong>
+    <span>{{ ticket_meta.category_label }}</span>
+  </div>
+  <div class="info-card">
+    <strong>Petugas</strong>
+    <span>{{ ticket.handled_by_cache or '-' }}</span>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-5">
+    <div class="card card-soft h-100">
+      <div class="card-body p-4">
+        <h2 class="section-title mb-3">Informasi tiket</h2>
+        <div class="detail-list">
+          <div class="detail-item">
+            <strong>Status saat ini</strong>
+            <span>{{ ticket.status_cache }}</span>
+          </div>
+          <div class="detail-item">
+            <strong>Update terakhir</strong>
+            <span>{{ ticket.last_update_cache or '-' }}</span>
+          </div>
+          <div class="detail-item">
+            <strong>Catatan terakhir</strong>
+            <p>{{ ticket.last_note_cache or 'Belum ada catatan tambahan.' }}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-7">
+    <div class="card card-soft mb-4">
+      <div class="card-body p-4">
+        <h2 class="section-title mb-2">Deskripsi tambahan</h2>
+        <div class="section-subtitle mb-3">Rincian yang Anda sampaikan saat membuat tiket.</div>
+        <p class="mb-0 detail-copy">{{ ticket.detail_description or '-' }}</p>
+      </div>
+    </div>
+    <div class="card card-soft">
+      <div class="card-body p-4">
+        <div class="section-head">
+          <div>
+            <h2 class="section-title">Histori penanganan</h2>
+            <div class="section-subtitle">Urutan update menampilkan perubahan status dan catatan terbaru pada tiket ini.</div>
+          </div>
+        </div>
+        {% if history_rows %}
+        <div class="timeline-lite">
+          {% for row in history_rows %}
+          <article class="timeline-item">
+            <div class="timeline-meta">
+              <span>{{ row.get('update_time', '-') }}</span>
+              <span class="status-pill {{ status_class(row.get('status_after')) }}">{{ row.get('status_after', '-') }}</span>
+            </div>
+            <p class="timeline-note">{{ row.get('catatan_terakhir', '-') }}</p>
+          </article>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">Belum ada histori yang terbaca.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

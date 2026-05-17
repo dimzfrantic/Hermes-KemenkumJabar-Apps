@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% block title %}Import Pegawai{% endblock %}
+
+{% block extra_head %}
+<style>
+  .import-page-shell {
+    max-width: 896px;
+    margin: 0 auto;
+  }
+
+  .import-page-shell .hero-banner {
+    margin-bottom: 1.25rem;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="import-page-shell">
+  <div class="hero-banner">
+    <div class="section-head mb-0">
+      <div>
+        <div class="hero-eyebrow"><i class="bi bi-cloud-arrow-up"></i> Admin Portal</div>
+        <h1 class="hero-title">Import Master Pegawai</h1>
+        <p class="hero-text">Unggah file Excel untuk memperbarui data akun portal pegawai dengan struktur yang rapi, NIP yang konsisten, dan password default yang tetap terkontrol.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card card-soft">
+      <div class="card-body p-4 p-lg-5 form-section">
+        <div class="section-head">
+          <div>
+            <h2 class="section-title">Unggah file Excel</h2>
+            <div class="section-subtitle">Kolom minimal yang dibutuhkan: <code>nip</code>, <code>nama</code>, dan <code>unit</code>. Kolom <code>nomor_hp</code> bersifat opsional.</div>
+          </div>
+          <div class="soft-badge"><i class="bi bi-file-earmark-spreadsheet"></i> Format .xlsx</div>
+        </div>
+
+        <form method="post" enctype="multipart/form-data" data-submit-once="true">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="mb-3">
+            <label class="form-label" for="excel_file">File Excel</label>
+            <input class="form-control" id="excel_file" type="file" name="excel_file" accept=".xlsx" required>
+          </div>
+          <div class="mb-4">
+            <label class="form-label" for="default_password">Password untuk akun baru saat import</label>
+            <input class="form-control" id="default_password" type="text" name="default_password" value="{{ default_password }}" required>
+            <div class="form-text">Nilai ini dipakai hanya untuk proses import yang sedang dijalankan. Jika diubah, password akun baru yang dibuat dari file Excel ini akan mengikuti nilai baru tersebut. Ini tidak mengubah konfigurasi password default permanen aplikasi.</div>
+          </div>
+
+          <div class="info-grid mb-4">
+            <div class="info-card">
+              <strong>Pastikan NIP bersih</strong>
+              <p>Gunakan format NIP yang konsisten agar tidak menimbulkan duplikasi akun saat sinkronisasi data.</p>
+            </div>
+            <div class="info-card">
+              <strong>Cek struktur kolom</strong>
+              <p>Header file Excel perlu sesuai agar proses import dapat membaca data pegawai dengan benar.</p>
+            </div>
+            <div class="info-card">
+              <strong>Amankan password default</strong>
+              <p>Gunakan password yang mudah disampaikan ke admin tetapi tetap layak untuk penggunaan awal sebelum diganti pegawai.</p>
+            </div>
+          </div>
+
+          <div class="d-flex flex-wrap gap-2">
+            <button class="btn btn-primary" type="submit" data-submit-once-button="true" data-loading-text="<span class='spinner-border spinner-border-sm me-2' role='status' aria-hidden='true'></span>Mengimpor...">Import Pegawai</button>
+            <a class="btn btn-outline-secondary" href="{{ url_for('admin.employees') }}" data-nav-once="true" data-loading-text="<span class='spinner-border spinner-border-sm me-2' role='status' aria-hidden='true'></span>Kembali...">Batal</a>
+          </div>
+        </form>
+      </div>
+    </div>
+</div>
+{% endblock %}

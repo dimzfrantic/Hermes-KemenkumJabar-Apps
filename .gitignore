@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Secrets
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# Logs
+*.log
+logs/
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Runtime / cache
+tmp/
+temp/
+runtime/
+*.lock
+__pycache__/
+
+# Uploads / generated
+uploads/
+generated/
+previews/
+jobs/
+instance/runtime/
+instance/previews/
+instance/jobs/
+instance/auto-events/
+
+# Backups
+backups/
+*.bak
+*.old
+*.backup
+
+# Hermes private / state
+auth.json
+state.db
+sessions/
+MEMORY.md
+USER.md
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

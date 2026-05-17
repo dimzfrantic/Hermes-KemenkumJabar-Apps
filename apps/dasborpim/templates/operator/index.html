@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% block title %}Input Data - Legal Drafter{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4><i class="bi bi-pencil-square"></i> Input Data Rapat Harmonisasi</h4>
+    <div>
+        <a href="{{ url_for('operator.export_excel') }}" class="btn btn-success" title="Export ke Excel">
+            <i class="bi bi-file-earmark-excel"></i> Export Excel
+        </a>
+        <a href="{{ url_for('operator.tambah') }}" class="btn btn-primary">
+            <i class="bi bi-plus-circle"></i> Tambah Data
+        </a>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <form method="GET" class="row g-2 align-items-end" id="filterForm">
+            <div class="col-auto">
+                <label class="form-label">Dari Tanggal</label>
+                <input type="date" name="tanggal_dari" class="form-control form-control-sm" value="{{ tanggal_dari }}">
+            </div>
+            <div class="col-auto">
+                <label class="form-label">Sampai Tanggal</label>
+                <input type="date" name="tanggal_sampai" class="form-control form-control-sm" value="{{ tanggal_sampai }}">
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i> Filter</button>
+                <a href="{{ url_for('operator.index') }}" class="btn btn-outline-secondary btn-sm">Reset</a>
+            </div>
+            <div class="col-auto ms-auto">
+                <div class="input-group input-group-sm" style="width:300px">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" class="form-control" id="searchInput" placeholder="Cari cepat..." oninput="searchDebounce()">
+                    <button class="btn btn-outline-secondary" onclick="clearSearch()" title="Bersihkan"><i class="bi bi-x-lg"></i></button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+{# ===== Tabel Normal (server-rendered) ===== #}
+<div id="normalTable">
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-striped table-hover mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th style="width:40px">#</th>
+                        <th>Tanggal</th>
+                        <th>Daerah</th>
+                        <th>Jenis</th>
+                        <th>Program</th>
+                        <th>Urusan</th>
+                        <th>Nama Raperda/Raperkada</th>
+                        <th>Tim</th>
+                        <th>Hasil</th>
+                        <th>Metode</th>
+                        <th style="width:100px">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in data.items %}
+                    <tr>
+                        <td>{{ loop.index + (data.page - 1) * data.per_page }}</td>
+                        <td>{{ r.tanggal_rapat.strftime('%d/%m/%Y') }}</td>
+                        <td>{{ r.daerah }}</td>
+                        <td>{{ r.jenis }}</td>
+                        <td>{{ r.program_pembentukan }}</td>
+                        <td style="white-space:normal;min-width:200px">{{ r.urusan_pemerintahan }}</td>
+                        <td style="white-space:normal;min-width:250px">{{ r.nama_raperda }}</td>
+                        <td>{{ r.tim_kerja }}</td>
+                        <td>
+                            {% if r.hasil == 'Selesai' %}
+                                <span class="badge bg-success">Selesai</span>
+                            {% else %}
+                                <span class="badge bg-danger">Dikembalikan</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if r.metode == 'One Day Service' %}
+                                <span class="badge bg-info">ODS</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Normal</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{{ url_for('operator.edit', id=r.id) }}" class="btn btn-sm btn-outline-warning" title="Edit">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                            <form method="POST" action="{{ url_for('operator.hapus', id=r.id) }}" class="d-inline" onsubmit="return confirm('Yakin hapus data ini?')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Hapus">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="11" class="text-center text-muted py-4">Belum ada data.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% if data.pages > 1 %}
+<nav class="mt-3">
+    <ul class="pagination justify-content-center">
+        <li class="page-item {% if not data.has_prev %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('operator.index', page=data.prev_num, tanggal_dari=tanggal_dari, tanggal_sampai=tanggal_sampai) }}">Previous</a>
+        </li>
+        {% for p in data.iter_pages() %}
+            {% if p %}
+            <li class="page-item {% if p == data.page %}active{% endif %}">
+                <a class="page-link" href="{{ url_for('operator.index', page=p, tanggal_dari=tanggal_dari, tanggal_sampai=tanggal_sampai) }}">{{ p }}</a>
+            </li>
+            {% else %}
+            <li class="page-item disabled"><span class="page-link">...</span></li>
+            {% endif %}
+        {% endfor %}
+        <li class="page-item {% if not data.has_next %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('operator.index', page=data.next_num, tanggal_dari=tanggal_dari, tanggal_sampai=tanggal_sampai) }}">Next</a>
+        </li>
+    </ul>
+</nav>
+{% endif %}
+</div>
+
+{# ===== Tabel Hasil Pencarian ===== #}
+<div id="searchTable" style="display:none"></div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let searchTimer = null;
+const editBase = '{{ url_for("operator.index") }}'.replace(/\/$/, '');
+const csrfToken = '{{ csrf_token() }}';
+
+function searchDebounce() {
+    clearTimeout(searchTimer);
+    const q = document.getElementById('searchInput').value.trim();
+    if (q.length === 0) {
+        document.getElementById('normalTable').style.display = '';
+        document.getElementById('searchTable').style.display = 'none';
+        return;
+    }
+    if (q.length < 2) return;
+    searchTimer = setTimeout(() => searchData(q), 300);
+}
+
+function searchData(q) {
+    const params = new URLSearchParams();
+    params.set('q', q);
+    params.set('per_page', 100);
+
+    fetch('/api/cari?' + params.toString())
+        .then(r => r.json())
+        .then(data => {
+            if (document.getElementById('searchInput').value.trim() !== q) return;
+
+            const container = document.getElementById('searchTable');
+            const rows = data.items || [];
+
+            if (rows.length === 0) {
+                container.innerHTML = '<div class="alert alert-info">Tidak ada data untuk "' + q + '"</div>';
+                document.getElementById('normalTable').style.display = 'none';
+                container.style.display = '';
+                return;
+            }
+
+            let html = '<div class="mb-2 text-muted"><small>' + rows.length + ' hasil untuk "' + q + '"</small></div>';
+            html += '<div class="card"><div class="card-body p-0"><div class="table-responsive"><table class="table table-striped table-hover mb-0"><thead class="table-dark"><tr>' +
+                '<th style="width:40px">#</th><th>Tanggal</th><th>Daerah</th><th>Jenis</th>' +
+                '<th>Program</th><th>Urusan</th><th>Nama Raperda</th>' +
+                '<th>Tim</th><th>Hasil</th><th>Metode</th><th style="width:100px">Aksi</th></tr></thead><tbody>';
+
+            rows.forEach((r, i) => {
+                const h = r.hasil === 'Selesai'
+                    ? '<span class="badge bg-success">Selesai</span>'
+                    : '<span class="badge bg-danger">Dikembalikan</span>';
+                const m = r.metode === 'One Day Service'
+                    ? '<span class="badge bg-info">ODS</span>'
+                    : '<span class="badge bg-secondary">Normal</span>';
+                const editUrl = '/operator/edit/' + r.id;
+                const hapusUrl = '/operator/hapus/' + r.id;
+                html += '<tr><td>' + (i+1) + '</td><td>' + r.tanggal_rapat + '</td><td>' + r.daerah + '</td><td>' + r.jenis + '</td>' +
+                    '<td>' + r.program_pembentukan + '</td><td style="white-space:normal;min-width:200px">' + r.urusan_pemerintahan + '</td>' +
+                    '<td style="white-space:normal;min-width:250px">' + r.nama_raperda + '</td>' +
+                    '<td>' + r.tim_kerja + '</td><td>' + h + '</td><td>' + m + '</td>' +
+                    '<td><a href="' + editUrl + '" class="btn btn-sm btn-outline-warning" title="Edit"><i class="bi bi-pencil"></i></a> ' +
+                    '<form method="POST" action="' + hapusUrl + '" class="d-inline" onsubmit="return confirm(\'Yakin hapus data ini?\')">' +
+                    '<input type="hidden" name="csrf_token" value="' + csrfToken + '">' +
+                    '<button type="submit" class="btn btn-sm btn-outline-danger" title="Hapus"><i class="bi bi-trash"></i></button></form></td></tr>';
+            });
+            html += '</tbody></table></div></div></div>';
+            container.innerHTML = html;
+
+            document.getElementById('normalTable').style.display = 'none';
+            container.style.display = '';
+        })
+        .catch(() => {
+            document.getElementById('searchTable').innerHTML = '<div class="alert alert-danger">Gagal mencari data</div>';
+            document.getElementById('normalTable').style.display = 'none';
+            document.getElementById('searchTable').style.display = '';
+        });
+}
+
+function clearSearch() {
+    clearTimeout(searchTimer);
+    document.getElementById('searchInput').value = '';
+    document.getElementById('normalTable').style.display = '';
+    document.getElementById('searchTable').style.display = 'none';
+}
+</script>
+{% endblock %}

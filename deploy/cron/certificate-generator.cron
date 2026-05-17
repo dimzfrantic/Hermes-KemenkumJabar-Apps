@@ -1,0 +1,1 @@
+* * * * * cd /opt/kemenkumjabar/apps/certificate-generator && . .venv/bin/activate && PYTHONPATH=/opt/kemenkumjabar/apps/certificate-generator python scripts/sync_auto_events.py >> instance/auto-events/cron.log 2>&1

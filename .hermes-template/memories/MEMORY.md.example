@@ -1,0 +1,7 @@
+# MEMORY.md
+
+- Repo ini berisi stack internal Kementerian Hukum Jawa Barat yang mencakup Dasborpim, Incident Engine, Incident Portal, Certificate Generator, Hermes Agent, dan Hermes Gateway Telegram.
+- Dasborpim menggunakan domain data dashboard pimpinan dan laporan kelembagaan.
+- Incident Engine adalah sumber status resmi untuk tiket dan insiden.
+- Certificate Generator memerlukan LibreOffice/soffice dan font yang sesuai agar hasil PDF konsisten.
+- Secret, token, dan file .env tidak disimpan di repo.

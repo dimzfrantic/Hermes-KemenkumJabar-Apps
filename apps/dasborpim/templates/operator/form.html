@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if record else 'Tambah' }} Data Rapat Harmonisasi{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-{{ 'pencil' if record else 'plus-circle' }}"></i>
+                    {{ 'Edit' if record else 'Tambah' }} Data Rapat Harmonisasi
+                </h5>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="tanggal_rapat" class="form-label">Tanggal Rapat Harmonisasi</label>
+                            <input type="date" class="form-control" id="tanggal_rapat" name="tanggal_rapat"
+                                   value="{{ record.tanggal_rapat.strftime('%Y-%m-%d') if record else '' }}" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="daerah" class="form-label">Daerah</label>
+                            <select class="form-select" id="daerah" name="daerah" required>
+                                <option value="">-- Pilih Daerah --</option>
+                                {% for d in daerah_choices %}
+                                <option value="{{ d }}" {% if record and record.daerah == d %}selected{% endif %}>{{ d }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="jenis" class="form-label">Jenis</label>
+                            <select class="form-select" id="jenis" name="jenis" required>
+                                <option value="">-- Pilih --</option>
+                                {% for j in ['Raperda (DPRD)', 'Raperda (Pemda)', 'Raperkada'] %}
+                                <option value="{{ j }}" {% if record and record.jenis == j %}selected{% endif %}>{{ j }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="program_pembentukan" class="form-label">Program Pembentukan</label>
+                            <select class="form-select" id="program_pembentukan" name="program_pembentukan" required>
+                                <option value="">-- Pilih --</option>
+                                {% for p in ['Propemperda', 'Propemperkada', 'Di luar Propemperkada'] %}
+                                <option value="{{ p }}" {% if record and record.program_pembentukan == p %}selected{% endif %}>{{ p }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="urusan_pemerintahan" class="form-label">Urusan Pemerintahan</label>
+                        <select class="form-select" id="urusan_pemerintahan" name="urusan_pemerintahan" required>
+                            <option value="">-- Pilih --</option>
+                            {% for u in [
+                                'Kesehatan', 'Pendidikan', 'Perhubungan', 'Perindustrian',
+                                'Pekerjaan Umum dan Penataan Ruang', 'Perumahan Rakyat dan Kawasan Permukiman',
+                                'Perpustakaan', 'Komunikasi dan Informatika',
+                                'Pemberdayaan Masyarakat dan Desa',
+                                'Pemberdayaan Perempuan dan Pelindungan Anak',
+                                'Kepemudaan dan Olah Raga',
+                                'Urusan Unsur Penunjang (perencanaan, pengawasan, kepegawaian, keuangan, pendidikan dan latihan, penelitian dan pengembangan)',
+                                'Urusan Unsur Pendukung (Sekretariat Daerah)',
+                            ] %}
+                            <option value="{{ u }}" {% if record and record.urusan_pemerintahan == u %}selected{% endif %}>{{ u }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="nama_raperda" class="form-label">Nama Raperda / Raperkada</label>
+                        <textarea class="form-control" id="nama_raperda" name="nama_raperda" rows="3" required>{{ record.nama_raperda if record else '' }}</textarea>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label for="tim_kerja" class="form-label">Tim Kerja</label>
+                            <select class="form-select" id="tim_kerja" name="tim_kerja" required>
+                                <option value="">-- Pilih --</option>
+                                {% for t in ['Tim Kerja 1', 'Tim Kerja 2', 'Tim Kerja 3', 'Tim Kerja 4'] %}
+                                <option value="{{ t }}" {% if record and record.tim_kerja == t %}selected{% endif %}>{{ t }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="hasil" class="form-label">Hasil</label>
+                            <select class="form-select" id="hasil" name="hasil">
+                                {% for h in ['Selesai', 'Dikembalikan'] %}
+                                <option value="{{ h }}" {% if record and record.hasil == h %}selected{% endif %}>{{ h }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="metode" class="form-label">Metode</label>
+                            <select class="form-select" id="metode" name="metode">
+                                {% for m in ['One Day Service', 'Normal'] %}
+                                <option value="{{ m }}" {% if record and record.metode == m %}selected{% endif %}>{{ m }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="keterangan" class="form-label">Keterangan (opsional)</label>
+                        <textarea class="form-control" id="keterangan" name="keterangan" rows="2">{{ record.keterangan if record else '' }}</textarea>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-circle"></i> Simpan
+                        </button>
+                        <a href="{{ url_for('operator.index') }}" class="btn btn-outline-secondary">
+                            <i class="bi bi-x-circle"></i> Batal
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

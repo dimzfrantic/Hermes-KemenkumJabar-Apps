@@ -1,0 +1,830 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard Admin Portal{% endblock %}
+
+{% block extra_head %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  .page-wrap.admin-page { max-width: 1380px; }
+  .admin-shell {
+    --bg: #08090a;
+    --panel: #0f1011;
+    --panel-2: #15171a;
+    --panel-3: rgba(255,255,255,.03);
+    --line: rgba(255,255,255,.08);
+    --line-soft: rgba(255,255,255,.05);
+    --line-strong: rgba(255,255,255,.12);
+    --text: #f7f8f8;
+    --muted: #8a8f98;
+    --soft: #d0d6e0;
+    --accent: #5e6ad2;
+    --accent-2: #7170ff;
+    --danger: #ff7d7d;
+    --warning: #ffd76a;
+    --success: #3ccf91;
+    --hero-glow-1: rgba(113,112,255,.16);
+    --hero-glow-2: rgba(94,106,210,.12);
+    --card-bg: rgba(255,255,255,.03);
+    --card-bg-hover: rgba(255,255,255,.05);
+    --row-hover: rgba(255,255,255,.02);
+    --shadow-lg: 0 24px 64px rgba(0,0,0,.34);
+    --shadow-inset: inset 0 1px 0 rgba(255,255,255,.03);
+    --pill-bg: rgba(255,255,255,.03);
+    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    color: var(--text);
+    background:
+      radial-gradient(circle at top right, var(--hero-glow-1), transparent 28%),
+      radial-gradient(circle at left top, var(--hero-glow-2), transparent 25%),
+      var(--bg);
+    border: 1px solid var(--line-soft);
+    border-radius: 24px;
+    box-shadow: var(--shadow-lg);
+    padding: 24px;
+    transition: background-color .25s ease, color .25s ease, border-color .25s ease, box-shadow .25s ease;
+  }
+  body[data-theme="light"] .admin-shell {
+    --bg: #eef3ff;
+    --panel: #ffffff;
+    --panel-2: #f7f9ff;
+    --panel-3: rgba(94,106,210,.06);
+    --line: rgba(36,48,82,.16);
+    --line-soft: rgba(36,48,82,.10);
+    --line-strong: rgba(36,48,82,.18);
+    --text: #162033;
+    --muted: #5f6b85;
+    --soft: #2f3d59;
+    --accent: #4c5dd9;
+    --accent-2: #6f7cff;
+    --danger: #d95c5c;
+    --warning: #b98500;
+    --success: #1f9e6d;
+    --hero-glow-1: rgba(111,124,255,.18);
+    --hero-glow-2: rgba(76,93,217,.10);
+    --card-bg: rgba(255,255,255,.88);
+    --card-bg-hover: rgba(255,255,255,.98);
+    --row-hover: rgba(76,93,217,.04);
+    --shadow-lg: 0 24px 64px rgba(31,54,107,.14);
+    --shadow-inset: inset 0 1px 0 rgba(255,255,255,.78);
+    --pill-bg: rgba(255,255,255,.78);
+  }
+  .admin-shell .mono { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .admin-topbar {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+  .admin-title {
+    font-size: clamp(28px, 4vw, 42px);
+    line-height: 1;
+    letter-spacing: -0.04em;
+    margin: 0;
+    font-weight: 600;
+  }
+  .admin-subtitle {
+    color: var(--muted);
+    margin-top: 10px;
+    font-size: 14px;
+    line-height: 1.6;
+    max-width: 720px;
+  }
+  .admin-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .sync-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--card-bg);
+    color: var(--soft);
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .sync-pill strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .sync-pill.is-refreshing {
+    border-color: color-mix(in srgb, var(--accent) 30%, var(--line) 70%);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent 86%);
+  }
+  .sync-pill.is-error {
+    border-color: color-mix(in srgb, var(--danger) 34%, var(--line) 66%);
+    color: color-mix(in srgb, var(--danger) 78%, white 22%);
+  }
+  .sync-pill.is-ok {
+    border-color: color-mix(in srgb, var(--success) 28%, var(--line) 72%);
+  }
+  .sync-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 999px;
+    background: var(--muted);
+    flex: 0 0 auto;
+  }
+  .sync-pill.is-refreshing .sync-dot {
+    background: var(--accent-2);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-2) 16%, transparent 84%);
+  }
+  .sync-pill.is-error .sync-dot {
+    background: var(--danger);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 16%, transparent 84%);
+  }
+  .sync-pill.is-ok .sync-dot {
+    background: var(--success);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 16%, transparent 84%);
+  }
+  .admin-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    padding: 10px 14px;
+    background: var(--card-bg);
+    color: var(--text);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    transition: background-color .2s ease, border-color .2s ease, color .2s ease, box-shadow .2s ease;
+  }
+  .admin-btn:hover { background: var(--card-bg-hover); color: var(--text); }
+  .admin-btn-primary {
+    background: linear-gradient(180deg, var(--accent-2), var(--accent));
+    border-color: color-mix(in srgb, var(--accent-2) 58%, white 42%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.15);
+    color: #fff;
+  }
+  .admin-grid {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 16px;
+  }
+  .stat-card,
+  .panel {
+    background: var(--card-bg);
+    border: 1px solid var(--line-soft);
+    border-radius: 18px;
+    box-shadow: var(--shadow-inset);
+  }
+  .stat-card { padding: 18px; min-height: 150px; }
+  .stat-overview {
+    grid-column: span 12;
+    display: grid;
+    grid-template-columns: minmax(300px, 1.35fr) minmax(0, 2fr);
+    gap: 16px;
+    align-items: stretch;
+  }
+  .stat-card.urgent {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent-2) 20%, var(--card-bg) 80%), var(--card-bg));
+    border-color: color-mix(in srgb, var(--accent-2) 42%, var(--line-soft) 58%);
+    min-height: 176px;
+  }
+  .stat-cluster {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+  }
+  .stat-card--compact {
+    min-height: 176px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .stat-label {
+    color: var(--muted);
+    font-size: 12px;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .stat-value {
+    font-size: clamp(34px, 5vw, 56px);
+    line-height: .95;
+    font-weight: 600;
+    letter-spacing: -0.05em;
+    margin-bottom: 10px;
+  }
+  .stat-detail { color: var(--soft); font-size: 14px; line-height: 1.55; }
+  .stat-trace {
+    margin-top: 14px;
+    color: var(--muted);
+    font-size: 12px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .panel { padding: 18px; }
+  .panel-hero {
+    grid-column: span 12;
+    padding: 0;
+    overflow: hidden;
+  }
+  .panel-hero-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: flex-start;
+    padding: 18px 18px 0;
+  }
+  .panel-title {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .panel-note { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  .priority-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--pill-bg);
+    border: 1px solid var(--line-soft);
+    color: var(--soft);
+    border-radius: 999px;
+    font-size: 12px;
+    padding: 7px 10px;
+    white-space: nowrap;
+  }
+  .priority-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--danger);
+    box-shadow: 0 0 0 4px rgba(255,125,125,.12);
+  }
+  .table-shell { margin-top: 16px; overflow-x: auto; }
+  .ops-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    min-width: 760px;
+  }
+  .ops-table th {
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted);
+    font-weight: 600;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--line-soft);
+    background: color-mix(in srgb, var(--panel) 84%, transparent 16%);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    backdrop-filter: blur(10px);
+  }
+  .ops-table td {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--line-soft);
+    color: var(--soft);
+    vertical-align: top;
+    font-size: 14px;
+    transition: background-color .18s ease, transform .18s ease;
+  }
+  .ops-table tbody tr:nth-child(even) td {
+    background: color-mix(in srgb, var(--panel-3) 48%, transparent 52%);
+  }
+  .ops-table tr:hover td { background: var(--row-hover); }
+  .alias-stack { display: flex; flex-direction: column; gap: 4px; }
+  .alias-main { color: var(--text); font-weight: 600; }
+  .alias-sub { color: var(--muted); font-size: 12px; }
+  .status-badge,
+  .sla-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid transparent;
+  }
+  .status-open { background: color-mix(in srgb, var(--muted) 14%, transparent 86%); color: var(--soft); border-color: var(--line-soft); }
+  .status-progress { background: color-mix(in srgb, var(--success) 18%, transparent 82%); color: color-mix(in srgb, var(--success) 78%, white 22%); border-color: color-mix(in srgb, var(--success) 28%, transparent 72%); }
+  .status-pending { background: color-mix(in srgb, var(--warning) 18%, transparent 82%); color: color-mix(in srgb, var(--warning) 72%, white 28%); border-color: color-mix(in srgb, var(--warning) 26%, transparent 74%); }
+  .status-resolved,
+  .status-closed { background: color-mix(in srgb, var(--accent) 16%, transparent 84%); color: color-mix(in srgb, var(--accent-2) 72%, white 28%); border-color: color-mix(in srgb, var(--accent-2) 24%, transparent 76%); }
+  .sla-red { background: color-mix(in srgb, var(--danger) 16%, transparent 84%); color: color-mix(in srgb, var(--danger) 78%, white 22%); border-color: color-mix(in srgb, var(--danger) 28%, transparent 72%); }
+  .sla-yellow { background: color-mix(in srgb, var(--warning) 16%, transparent 84%); color: color-mix(in srgb, var(--warning) 74%, white 26%); border-color: color-mix(in srgb, var(--warning) 28%, transparent 72%); }
+  .ticket-meta { display: flex; flex-direction: column; gap: 4px; }
+  .ticket-main { color: var(--text); }
+  .ticket-sub { color: var(--muted); font-size: 12px; }
+  .mini-list {
+    display: grid;
+    gap: 12px;
+    margin-top: 14px;
+  }
+  .mini-item {
+    border: 1px solid var(--line-soft);
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--card-bg) 92%, white 8%);
+    padding: 14px;
+  }
+  .mini-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: flex-start;
+    margin-bottom: 8px;
+  }
+  .mini-title { color: var(--text); font-weight: 600; margin: 0; }
+  .mini-text { color: var(--soft); margin: 0 0 6px; font-size: 14px; }
+  .mini-muted { color: var(--muted); font-size: 12px; }
+  .section-stack {
+    display: grid;
+    gap: 16px;
+    grid-column: span 12;
+  }
+  .section-split {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 16px;
+    grid-column: span 12;
+  }
+  .span-4 { grid-column: span 4; }
+  .span-6 { grid-column: span 6; }
+  .span-8 { grid-column: span 8; }
+  .span-12 { grid-column: span 12; }
+  .empty-state {
+    border: 1px dashed var(--line);
+    border-radius: 16px;
+    padding: 18px;
+    color: var(--muted);
+    background: rgba(255,255,255,.02);
+  }
+  @media (max-width: 992px) {
+    .span-4, .span-6, .span-8 { grid-column: span 12; }
+    .admin-topbar, .panel-hero-head, .mini-top { flex-direction: column; }
+    .stat-overview,
+    .stat-cluster { grid-template-columns: 1fr; }
+    .admin-actions { width: 100%; }
+    .admin-actions .admin-btn { width: 100%; justify-content: center; }
+  }
+</style>
+{% endblock %}
+
+{% macro status_class(status) -%}
+  {%- set value = (status or '')|upper -%}
+  {%- if value == 'OPEN' -%}status-open
+  {%- elif value == 'IN_PROGRESS' -%}status-progress
+  {%- elif value == 'PENDING' -%}status-pending
+  {%- elif value == 'RESOLVED' -%}status-resolved
+  {%- elif value == 'CLOSED' -%}status-closed
+  {%- else -%}status-open
+  {%- endif -%}
+{%- endmacro %}
+
+{% block main_class %}page-wrap admin-page{% endblock %}
+
+{% block content %}
+<div class="admin-shell" id="admin-shell" data-dashboard-api-url="{{ url_for('admin.dashboard_data') }}" data-refresh-interval-ms="{{ dashboard_refresh_seconds * 1000 }}">
+  <div class="admin-topbar">
+    <div>
+      <h1 class="admin-title">Dashboard Admin Portal</h1>
+      <p class="admin-subtitle">Ringkas area yang paling penting lebih dulu: tiket prioritas, kondisi aktif, dan tiket selesai terbaru.</p>
+    </div>
+    <div class="admin-actions">
+      <div class="sync-pill is-ok" id="dashboard-sync-pill" aria-live="polite">
+        <span class="sync-dot"></span>
+        <span><strong id="dashboard-sync-label">Update terakhir</strong><br><span id="dashboard-sync-time">{{ dashboard_payload_json.sync.last_synced_at }}</span></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="admin-grid">
+    <div class="stat-overview">
+      <div class="stat-card urgent">
+        <div class="stat-label">Prioritas utama</div>
+        <div class="stat-value" id="summary-urgent-total">{{ urgent_total }}</div>
+        <div class="stat-detail" id="summary-urgent-detail">Tiket aktif SLA kuning atau merah.</div>
+      </div>
+      <div class="stat-cluster">
+        <div class="stat-card stat-card--compact">
+          <div class="stat-label">Tiket aktif</div>
+          <div class="stat-value" id="summary-active-total">{{ active_total }}</div>
+          <div class="stat-detail" id="summary-active-detail">OPEN {{ active_counts.get('OPEN', 0) }} · IN_PROGRESS {{ active_counts.get('IN_PROGRESS', 0) }} · PENDING {{ active_counts.get('PENDING', 0) }}</div>
+        </div>
+        <div class="stat-card stat-card--compact">
+          <div class="stat-label">Tiket selesai</div>
+          <div class="stat-value" id="summary-finished-total">{{ status_counts.get('RESOLVED', 0) + status_counts.get('CLOSED', 0) }}</div>
+          <div class="stat-detail" id="summary-finished-detail">RESOLVED {{ status_counts.get('RESOLVED', 0) }} · CLOSED {{ status_counts.get('CLOSED', 0) }}</div>
+        </div>
+        <div class="stat-card stat-card--compact">
+          <div class="stat-label">Total tiket</div>
+          <div class="stat-value" id="summary-total-tickets">{{ active_total + archive_total }}</div>
+          <div class="stat-detail" id="summary-total-detail">Aktif {{ active_total }} · Arsip {{ archive_total }}</div>
+        </div>
+      </div>
+    </div>
+
+    <section class="panel panel-hero">
+      <div class="panel-hero-head">
+        <div>
+          <h2 class="panel-title">Tiket yang Perlu Ditangani Segera</h2>
+        </div>
+        <div class="priority-pill"><span class="priority-dot"></span> Fokus tindakan cepat</div>
+      </div>
+      <div id="urgent-section-body">
+      {% if urgent_rows %}
+      <div class="table-shell">
+        <table class="ops-table">
+          <thead>
+            <tr>
+              <th>Alias</th>
+              <th>SLA</th>
+              <th>Status</th>
+              <th>Masalah</th>
+              <th>Lokasi</th>
+              <th>Petugas</th>
+              <th>Durasi Aktif</th>
+              <th>Update</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in urgent_rows %}
+            {% set row = item.row %}
+            <tr>
+              <td>
+                <div class="alias-stack">
+                  <span class="alias-main">{{ row.get('alias') or '-' }}</span>
+                  <span class="alias-sub mono">{{ row.get('ticket_code') or '-' }}</span>
+                  <span class="alias-sub">{{ row.get('category_label') or 'Other' }}</span>
+                </div>
+              </td>
+              <td><span class="sla-badge {{ 'sla-red' if item.sla_level == 'RED' else 'sla-yellow' }}">{{ item.sla_level }}</span></td>
+              <td><span class="status-badge {{ status_class(row.get('status')) }}">{{ row.get('status') or '-' }}</span></td>
+              <td>
+                <div class="ticket-meta">
+                  <span class="ticket-main">{{ row.get('masalah') or '-' }}</span>
+                  <span class="ticket-sub">{{ row.get('catatan_terakhir') or row.get('alasan_pending') or 'Belum ada catatan tambahan.' }}</span>
+                </div>
+              </td>
+              <td>{{ row.get('lokasi') or '-' }}</td>
+              <td>{{ '' if (row.get('status') or '') == 'OPEN' else (row.get('ditangani_oleh') or '-') }}</td>
+              <td class="mono">{{ row.get('_stagnation_label') or '-' }}</td>
+              <td class="mono">{{ row.get('update_terakhir') or row.get('created_at') or '-' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="panel" style="margin:18px;">
+        <div class="empty-state">Belum ada tiket dengan SLA kuning atau merah. Dashboard dalam kondisi aman.</div>
+      </div>
+      {% endif %}
+      </div>
+    </section>
+
+    <div class="section-split">
+      <section class="panel span-4">
+        <h2 class="panel-title">Tiket Pending</h2>
+        <div id="pending-section-body">
+        {% if pending_rows %}
+        <div class="mini-list">
+          {% for row in pending_rows %}
+          <article class="mini-item">
+            <div class="mini-top">
+              <div>
+                <p class="mini-title">{{ row.get('alias') or '-' }} · {{ row.get('lokasi') or '-' }}</p>
+                <div class="mini-muted mono">{{ row.get('ticket_code') or '-' }}</div>
+                <div class="mini-muted">{{ row.get('category_label') or 'Other' }}</div>
+              </div>
+              <span class="status-badge status-pending">PENDING</span>
+            </div>
+            <p class="mini-text">{{ row.get('masalah') or '-' }}</p>
+            <div class="mini-muted">{{ row.get('alasan_pending') or row.get('catatan_terakhir') or 'Belum ada alasan pending.' }}</div>
+            <div class="mini-muted" style="margin-top:8px;">Petugas: {{ row.get('ditangani_oleh') or '-' }} · Durasi: {{ row.get('_stagnation_label') or '-' }}</div>
+          </article>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state" style="margin-top:14px;">Tidak ada tiket pending aktif.</div>
+        {% endif %}
+        </div>
+      </section>
+
+      <section class="panel span-8">
+        <h2 class="panel-title">Tiket Aktif Terbaru</h2>
+        <div id="latest-active-section-body">
+        {% if latest_active %}
+        <div class="table-shell">
+          <table class="ops-table">
+            <thead>
+              <tr>
+                <th>Alias</th>
+                <th>Status</th>
+                <th>Masalah</th>
+                <th>Lokasi</th>
+                <th>Pelapor</th>
+                <th>Petugas</th>
+                <th>Update</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in latest_active %}
+              <tr>
+                <td>
+                  <div class="alias-stack">
+                    <span class="alias-main">{{ row.get('alias') or '-' }}</span>
+                    <span class="alias-sub mono">{{ row.get('ticket_code') or '-' }}</span>
+                  <span class="alias-sub">{{ row.get('category_label') or 'Other' }}</span>
+                  </div>
+                </td>
+                <td><span class="status-badge {{ status_class(row.get('status')) }}">{{ row.get('status') or '-' }}</span></td>
+                <td>{{ row.get('masalah') or '-' }}</td>
+                <td>{{ row.get('lokasi') or '-' }}</td>
+                <td>{{ row.get('pelapor') or '-' }}</td>
+                <td>{{ '' if (row.get('status') or '') == 'OPEN' else (row.get('ditangani_oleh') or '-') }}</td>
+                <td class="mono">{{ row.get('update_terakhir') or row.get('created_at') or '-' }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="empty-state" style="margin-top:14px;">Belum ada tiket aktif.</div>
+        {% endif %}
+        </div>
+      </section>
+    </div>
+
+    <section class="panel span-12">
+      <h2 class="panel-title">Tiket Selesai Terbaru</h2>
+      <div id="finished-section-body">
+      {% if finished_rows %}
+      <div class="table-shell">
+        <table class="ops-table">
+          <thead>
+            <tr>
+              <th>Alias</th>
+              <th>Status</th>
+              <th>Masalah</th>
+              <th>Lokasi</th>
+              <th>Pelapor</th>
+              <th>Petugas</th>
+              <th>Durasi</th>
+              <th>Update</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in finished_rows %}
+            <tr>
+              <td>
+                <div class="alias-stack">
+                  <span class="alias-main">{{ row.get('alias') or '-' }}</span>
+                  <span class="alias-sub mono">{{ row.get('ticket_code') or '-' }}</span>
+                  <span class="alias-sub">{{ row.get('category_label') or 'Other' }}</span>
+                </div>
+              </td>
+              <td><span class="status-badge {{ status_class(row.get('status')) }}">{{ row.get('status') or '-' }}</span></td>
+              <td>{{ row.get('masalah') or '-' }}</td>
+              <td>{{ row.get('lokasi') or '-' }}</td>
+              <td>{{ row.get('pelapor') or '-' }}</td>
+              <td>{{ row.get('ditangani_oleh') or '-' }}</td>
+              <td class="mono">{{ row.get('durasi') or '-' }}</td>
+              <td class="mono">{{ row.get('update_terakhir') or row.get('closed_at') or row.get('resolved_at') or '-' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state" style="margin-top:14px;">Belum ada tiket selesai yang bisa ditampilkan.</div>
+      {% endif %}
+      </div>
+    </section>
+  </div>
+</div>
+<script>
+(function () {
+  const shell = document.getElementById('admin-shell');
+  if (!shell) return;
+
+  const apiUrl = shell.dataset.dashboardApiUrl;
+  const refreshInterval = Number(shell.dataset.refreshIntervalMs || '60000');
+  const initialPayload = {{ dashboard_payload_json|tojson }};
+  const syncPill = document.getElementById('dashboard-sync-pill');
+  const syncLabel = document.getElementById('dashboard-sync-label');
+  const syncTime = document.getElementById('dashboard-sync-time');
+  let currentVersion = (initialPayload && initialPayload.sync && initialPayload.sync.last_synced_version) || '';
+  let isRefreshing = false;
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function setText(id, value) {
+    const node = document.getElementById(id);
+    if (node) node.textContent = value;
+  }
+
+  function updateSyncPill(state, payload) {
+    if (!syncPill || !syncLabel || !syncTime) return;
+    syncPill.classList.remove('is-refreshing', 'is-error', 'is-ok');
+    syncPill.classList.add(state === 'error' ? 'is-error' : state === 'refreshing' ? 'is-refreshing' : 'is-ok');
+    if (state === 'refreshing') {
+      syncLabel.textContent = 'Memperbarui data';
+      syncTime.textContent = 'Mengambil data terbaru dashboard admin...';
+      return;
+    }
+    if (state === 'error') {
+      syncLabel.textContent = 'Update otomatis bermasalah';
+      syncTime.textContent = payload?.sync?.last_error || 'Menampilkan data terakhir yang tersedia.';
+      return;
+    }
+    syncLabel.textContent = 'Update terakhir';
+    syncTime.textContent = payload?.sync?.last_synced_at || '-';
+  }
+
+  function renderUrgentSection(rows) {
+    const host = document.getElementById('urgent-section-body');
+    if (!host) return;
+    if (!rows || !rows.length) {
+      host.innerHTML = '<div class="panel" style="margin:18px;"><div class="empty-state">Belum ada tiket dengan SLA kuning atau merah. Dashboard dalam kondisi aman.</div></div>';
+      return;
+    }
+    const body = rows.map((item) => {
+      const row = item.row || {};
+      const slaClass = item.sla_level === 'RED' ? 'sla-red' : 'sla-yellow';
+      return `
+        <tr>
+          <td>
+            <div class="alias-stack">
+              <span class="alias-main">${escapeHtml(row.alias || '-')}</span>
+              <span class="alias-sub mono">${escapeHtml(row.ticket_code || '-')}</span>
+              <span class="alias-sub">${escapeHtml(row.category_label || 'Other')}</span>
+            </div>
+          </td>
+          <td><span class="sla-badge ${slaClass}">${escapeHtml(item.sla_level || '-')}</span></td>
+          <td><span class="status-badge ${escapeHtml(row.status_class || 'status-open')}">${escapeHtml(row.status || '-')}</span></td>
+          <td>
+            <div class="ticket-meta">
+              <span class="ticket-main">${escapeHtml(row.masalah || '-')}</span>
+              <span class="ticket-sub">${escapeHtml(row.catatan || 'Belum ada catatan tambahan.')}</span>
+            </div>
+          </td>
+          <td>${escapeHtml(row.lokasi || '-')}</td>
+          <td>${escapeHtml(row.petugas || '-')}</td>
+          <td class="mono">${escapeHtml(row.durasi_aktif || '-')}</td>
+          <td class="mono">${escapeHtml(row.update || '-')}</td>
+        </tr>`;
+    }).join('');
+    host.innerHTML = `
+      <div class="table-shell">
+        <table class="ops-table">
+          <thead>
+            <tr>
+              <th>Alias</th>
+              <th>SLA</th>
+              <th>Status</th>
+              <th>Masalah</th>
+              <th>Lokasi</th>
+              <th>Petugas</th>
+              <th>Durasi Aktif</th>
+              <th>Update</th>
+            </tr>
+          </thead>
+          <tbody>${body}</tbody>
+        </table>
+      </div>`;
+  }
+
+  function renderPendingSection(rows) {
+    const host = document.getElementById('pending-section-body');
+    if (!host) return;
+    if (!rows || !rows.length) {
+      host.innerHTML = '<div class="empty-state" style="margin-top:14px;">Tidak ada tiket pending aktif.</div>';
+      return;
+    }
+    host.innerHTML = `<div class="mini-list">${rows.map((row) => `
+      <article class="mini-item">
+        <div class="mini-top">
+          <div>
+            <p class="mini-title">${escapeHtml(row.alias || '-')} · ${escapeHtml(row.lokasi || '-')}</p>
+            <div class="mini-muted mono">${escapeHtml(row.ticket_code || '-')}</div>
+            <div class="mini-muted">${escapeHtml(row.category_label || 'Other')}</div>
+          </div>
+          <span class="status-badge status-pending">PENDING</span>
+        </div>
+        <p class="mini-text">${escapeHtml(row.masalah || '-')}</p>
+        <div class="mini-muted">${escapeHtml(row.alasan_pending || 'Belum ada alasan pending.')}</div>
+        <div class="mini-muted" style="margin-top:8px;">Petugas: ${escapeHtml(row.petugas || '-')} · Durasi: ${escapeHtml(row.durasi_aktif || '-')}</div>
+      </article>`).join('')}</div>`;
+  }
+
+  function renderTableSection(hostId, rows, emptyMessage, columns) {
+    const host = document.getElementById(hostId);
+    if (!host) return;
+    if (!rows || !rows.length) {
+      host.innerHTML = `<div class="empty-state" style="margin-top:14px;">${escapeHtml(emptyMessage)}</div>`;
+      return;
+    }
+    const head = columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join('');
+    const body = rows.map((row) => `
+      <tr>
+        ${columns.map((column) => column.render(row)).join('')}
+      </tr>`).join('');
+    host.innerHTML = `
+      <div class="table-shell">
+        <table class="ops-table">
+          <thead><tr>${head}</tr></thead>
+          <tbody>${body}</tbody>
+        </table>
+      </div>`;
+  }
+
+  const aliasCell = (row) => `
+    <td>
+      <div class="alias-stack">
+        <span class="alias-main">${escapeHtml(row.alias || '-')}</span>
+        <span class="alias-sub mono">${escapeHtml(row.ticket_code || '-')}</span>
+        <span class="alias-sub">${escapeHtml(row.category_label || 'Other')}</span>
+      </div>
+    </td>`;
+  const statusCell = (row) => `<td><span class="status-badge ${escapeHtml(row.status_class || 'status-open')}">${escapeHtml(row.status || '-')}</span></td>`;
+
+  function renderAll(payload) {
+    if (!payload) return;
+    setText('summary-urgent-total', String(payload.summary?.urgent_total ?? 0));
+    setText('summary-urgent-detail', payload.summary?.urgent_detail || 'Tiket aktif SLA kuning atau merah.');
+    setText('summary-active-total', String(payload.summary?.active_total ?? 0));
+    setText('summary-active-detail', payload.summary?.active_detail || '-');
+    setText('summary-finished-total', String(payload.summary?.finished_total ?? 0));
+    setText('summary-finished-detail', payload.summary?.finished_detail || '-');
+    setText('summary-total-tickets', String(payload.summary?.total_tickets ?? 0));
+    setText('summary-total-detail', payload.summary?.total_detail || '-');
+
+    renderUrgentSection(payload.lists?.urgent_rows || []);
+    renderPendingSection(payload.lists?.pending_rows || []);
+    renderTableSection('latest-active-section-body', payload.lists?.latest_active || [], 'Belum ada tiket aktif.', [
+      { label: 'Alias', render: aliasCell },
+      { label: 'Status', render: statusCell },
+      { label: 'Masalah', render: (row) => `<td>${escapeHtml(row.masalah || '-')}</td>` },
+      { label: 'Lokasi', render: (row) => `<td>${escapeHtml(row.lokasi || '-')}</td>` },
+      { label: 'Pelapor', render: (row) => `<td>${escapeHtml(row.pelapor || '-')}</td>` },
+      { label: 'Petugas', render: (row) => `<td>${escapeHtml(row.petugas || '-')}</td>` },
+      { label: 'Update', render: (row) => `<td class="mono">${escapeHtml(row.update || '-')}</td>` },
+    ]);
+    renderTableSection('finished-section-body', payload.lists?.finished_rows || [], 'Belum ada tiket selesai yang bisa ditampilkan.', [
+      { label: 'Alias', render: aliasCell },
+      { label: 'Status', render: statusCell },
+      { label: 'Masalah', render: (row) => `<td>${escapeHtml(row.masalah || '-')}</td>` },
+      { label: 'Lokasi', render: (row) => `<td>${escapeHtml(row.lokasi || '-')}</td>` },
+      { label: 'Pelapor', render: (row) => `<td>${escapeHtml(row.pelapor || '-')}</td>` },
+      { label: 'Petugas', render: (row) => `<td>${escapeHtml(row.petugas || '-')}</td>` },
+      { label: 'Durasi', render: (row) => `<td class="mono">${escapeHtml(row.durasi || '-')}</td>` },
+      { label: 'Update', render: (row) => `<td class="mono">${escapeHtml(row.update || '-')}</td>` },
+    ]);
+    updateSyncPill('ok', payload);
+  }
+
+  async function refreshDashboard() {
+    if (isRefreshing || !apiUrl || document.visibilityState === 'hidden') return;
+    isRefreshing = true;
+    updateSyncPill('refreshing');
+    try {
+      const response = await fetch(apiUrl, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok || !result.data) {
+        throw new Error(result.error || 'Gagal mengambil data dashboard admin.');
+      }
+      const payload = result.data;
+      const nextVersion = payload.sync?.last_synced_version || '';
+      if (nextVersion && nextVersion === currentVersion) {
+        updateSyncPill('ok', payload);
+      } else {
+        renderAll(payload);
+        currentVersion = nextVersion;
+      }
+    } catch (error) {
+      updateSyncPill('error', { sync: { last_error: error.message || 'Menampilkan data terakhir yang tersedia.' } });
+    } finally {
+      isRefreshing = false;
+    }
+  }
+
+  renderAll(initialPayload);
+  window.setInterval(refreshDashboard, Math.max(refreshInterval, 5000));
+})();
+</script>
+{% endblock %}

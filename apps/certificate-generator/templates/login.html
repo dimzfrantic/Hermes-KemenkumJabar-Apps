@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block title %}Login | {{ app_name }}{% endblock %}
+{% block content %}
+<div class="row justify-content-center align-items-stretch g-4 app-login-layout">
+  <div class="col-xl-7 col-lg-6">
+    <section class="hero hero-showcase h-100 d-flex flex-column justify-content-center">
+      <div class="eyebrow mb-3">Layanan internal</div>
+      <h1 class="display-5 fw-bold mb-3">Layanan e-sertifikat Kemenkum Jabar</h1>
+      <p class="hero-copy fs-5 mb-0">Aplikasi internal untuk mengelola pembuatan sertifikat massal secara konsisten, rapi, dan siap distribusi.</p>
+    </section>
+  </div>
+  <div class="col-xl-5 col-lg-6">
+    <div class="card h-100 app-auth-card">
+      <div class="card-body p-4 p-lg-5 d-flex flex-column justify-content-center">
+        <div class="mb-4">
+          <div class="eyebrow mb-2">Akses admin</div>
+          <p class="small-muted mb-0">Gunakan akun admin untuk mengelola batch generate sertifikat dan memantau proses distribusi.</p>
+        </div>
+        <form method="post" class="d-grid gap-3">
+          <div>
+            <label class="form-label">Username</label>
+            <input class="form-control" type="text" name="username" placeholder="Masukkan username admin" required>
+          </div>
+          <div>
+            <label class="form-label">Password</label>
+            <div class="input-group">
+              <input class="form-control" id="admin-password" type="password" name="password" placeholder="Masukkan password" required>
+              <button class="btn password-toggle-btn" type="button" data-password-toggle data-password-target="admin-password" aria-pressed="false">Lihat</button>
+            </div>
+          </div>
+          <button class="btn btn-primary w-100" type="submit">Masuk ke Aplikasi</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

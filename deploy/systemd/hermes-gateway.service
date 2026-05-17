@@ -1,0 +1,11 @@
+[Unit]
+Description=Hermes Gateway
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/hermes gateway run
+Restart=always
+
+[Install]
+WantedBy=default.target

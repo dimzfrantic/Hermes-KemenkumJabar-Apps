@@ -1,0 +1,12 @@
+[Unit]
+Description=Dasborpim
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/kemenkumjabar/apps/dasborpim
+ExecStart=/opt/kemenkumjabar/apps/dasborpim/.venv/bin/gunicorn --bind 0.0.0.0:5000 --workers 2 --timeout 120 "app:create_app()"
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

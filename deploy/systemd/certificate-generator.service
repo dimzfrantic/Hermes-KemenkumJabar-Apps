@@ -1,0 +1,12 @@
+[Unit]
+Description=Certificate Generator
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/kemenkumjabar/apps/certificate-generator
+ExecStart=/opt/kemenkumjabar/apps/certificate-generator/.venv/bin/gunicorn -w 2 -b 0.0.0.0:5062 wsgi:app
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

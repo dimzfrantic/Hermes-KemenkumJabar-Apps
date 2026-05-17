@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard | {{ app_name }}{% endblock %}
+{% block content %}
+<section class="hero mb-4">
+  <div class="row g-4 align-items-center">
+    <div class="col-lg-8">
+      <div class="eyebrow mb-3">Dashboard utama</div>
+      <h1 class="display-5 fw-bold mb-3">Generator Sertifikat</h1>
+      <p class="hero-copy fs-5 mb-0">Pilih jenis proses yang ingin dijalankan untuk pengelolaan sertifikat.</p>
+    </div>
+  </div>
+</section>
+
+<div class="row g-4">
+  <div class="col-lg-6">
+    <div class="card app-workspace-card h-100">
+      <div class="card-body p-4 p-lg-5 d-flex flex-column">
+        <div class="eyebrow mb-2">Menu utama</div>
+        <h2 class="h3 fw-bold mb-3">Auto Generate</h2>
+        <p class="small-muted mb-4">Kelola kegiatan yang membaca peserta baru dari Google Form Response dan membuat sertifikat secara otomatis.</p>
+        <div class="mt-auto">
+          <a class="btn btn-outline-primary btn-lg" href="{{ url_for('certificates.auto_event_new') }}">Buka Auto Generate</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card app-workspace-card h-100">
+      <div class="card-body p-4 p-lg-5 d-flex flex-column">
+        <div class="eyebrow mb-2">Menu utama</div>
+        <h2 class="h3 fw-bold mb-3">Manual Generate</h2>
+        <p class="small-muted mb-4">Buat batch baru secara manual dengan upload template PPTX, file Excel peserta, dan folder tujuan Google Drive.</p>
+        <div class="mt-auto">
+          <a class="btn btn-primary btn-lg" href="{{ url_for('certificates.new_job') }}">Buka Manual Generate</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

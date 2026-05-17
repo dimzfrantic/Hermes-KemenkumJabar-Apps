@@ -1,0 +1,139 @@
+{% extends 'base.html' %}
+{% block title %}Auto Generate | {{ app_name }}{% endblock %}
+{% block content %}
+<section class="hero mb-4">
+  <div class="row g-4 align-items-center">
+    <div class="col-lg-8">
+      <div class="eyebrow mb-3">Auto generate</div>
+      <h1 class="display-6 fw-bold mb-3">Automation Baru</h1>
+      <p class="hero-copy mb-0">Pantau kegiatan aktif dan tambahkan konfigurasi automation baru pada halaman ini.</p>
+    </div>
+    <div class="col-lg-4 text-lg-end">
+      <a class="btn btn-outline-secondary" href="{{ url_for('certificates.dashboard') }}">Dashboard</a>
+    </div>
+  </div>
+</section>
+
+<div class="card app-workspace-card mb-4">
+  <div class="card-body p-4 p-lg-5">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+      <div>
+        <div class="eyebrow mb-2">Automation baru</div>
+        <h2 class="h3 fw-bold mb-1">Daftar kegiatan auto generate</h2>
+        <p class="small-muted mb-0">Pantau kegiatan aktif yang sedang membaca peserta dari Google Form Response.</p>
+      </div>
+    </div>
+
+    {% if automation_events %}
+    <div class="table-responsive dashboard-history-table-wrap">
+      <table class="table align-middle dashboard-history-table">
+        <thead>
+          <tr>
+            <th>Nama Kegiatan</th>
+            <th>Status</th>
+            <th>Sync Otomatis</th>
+            <th>Berhasil</th>
+            <th>Gagal</th>
+            <th>Sync Terakhir</th>
+            <th>Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for event in automation_events %}
+          <tr>
+            <td>{{ event.name }}</td>
+            <td><span class="status-pill status-{{ event.status_key }}">{{ event.status_label }}</span></td>
+            <td>{{ event.sync_automatic_label }}</td>
+            <td>{{ event.success_responses }}</td>
+            <td>{{ event.failed_responses }}</td>
+            <td>{{ event.last_synced_at }}</td>
+            <td><a class="btn btn-sm btn-outline-primary" href="{{ event.detail_url }}">Detail</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="surface-soft text-center mb-0">
+      <div class="section-title">Belum ada automation kegiatan</div>
+      <p class="small-muted mb-0">Tambahkan konfigurasi kegiatan di bawah untuk membuat automation pertama.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card app-workspace-card">
+  <div class="card-body p-4 p-lg-5">
+    <form method="post" enctype="multipart/form-data" class="app-form-shell" id="auto-event-form">
+      <div class="surface-soft app-form-group">
+        <div class="app-group-heading">
+          <div class="section-title mb-1">Konfigurasi kegiatan</div>
+          <p class="small-muted mb-0">Isi form dibawah ini untuk konfigurasi auto generate sertifikat kegiatan.</p>
+        </div>
+        <div class="row g-4">
+          <div class="col-lg-6">
+            <label class="form-label">Nama Kegiatan</label>
+            <input class="form-control" type="text" name="name" value="{{ defaults.get('name', '') }}" required>
+          </div>
+          <div class="col-lg-6">
+            <label class="form-label">Interval Cek (menit)</label>
+            <input class="form-control" type="number" min="1" name="polling_interval_minutes" value="{{ defaults.get('polling_interval_minutes', 5) }}" required>
+          </div>
+          <div class="col-lg-8">
+            <label class="form-label">Spreadsheet ID / Link Google Form Response</label>
+            <input class="form-control" type="text" name="spreadsheet_id" value="{{ defaults.get('spreadsheet_id', '') }}" placeholder="Masukkan link atau Spreadsheet ID" required>
+          </div>
+          <div class="col-lg-4">
+            <label class="form-label">Nama Sheet Response</label>
+            <input class="form-control" type="text" name="worksheet_name" value="{{ defaults.get('worksheet_name', '') }}" placeholder="Kosongkan untuk sheet pertama">
+          </div>
+          <div class="col-lg-6">
+            <label class="form-label">Template Sertifikat (.pptx)</label>
+            <input class="form-control" type="file" name="template_file" accept=".pptx" required>
+          </div>
+          <div class="col-lg-6">
+            <label class="form-label">Folder ID / Link Google Drive</label>
+            <input class="form-control" type="text" name="drive_folder_id" value="{{ defaults.get('drive_folder_id', '') }}" placeholder="Masukkan link atau Folder ID" required>
+          </div>
+        </div>
+      </div>
+      <div id="auto-event-progress" class="alert alert-primary mt-4 mb-0 d-none" role="status">
+        <div class="d-flex align-items-center gap-3">
+          <div class="spinner-border spinner-border-sm" aria-hidden="true"></div>
+          <div>
+            <div class="fw-semibold">Menyimpan dan mengaktifkan automation...</div>
+            <div class="small">Mohon tunggu. Sistem sedang memeriksa spreadsheet, template, dan folder Google Drive.</div>
+          </div>
+        </div>
+      </div>
+      <div class="d-flex gap-3 flex-wrap app-form-actions mt-2">
+        <button class="btn btn-primary" type="submit" id="auto-event-submit-button">
+          <span class="default-label">Simpan & Aktifkan</span>
+          <span class="loading-label d-none"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Memproses...</span>
+        </button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('certificates.dashboard') }}">Batal</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_script %}
+<script>
+  (function () {
+    const form = document.getElementById('auto-event-form');
+    const submitButton = document.getElementById('auto-event-submit-button');
+    const progressBox = document.getElementById('auto-event-progress');
+    if (!form || !submitButton) return;
+
+    form.addEventListener('submit', function () {
+      submitButton.disabled = true;
+      const defaultLabel = submitButton.querySelector('.default-label');
+      const loadingLabel = submitButton.querySelector('.loading-label');
+      if (defaultLabel) defaultLabel.classList.add('d-none');
+      if (loadingLabel) loadingLabel.classList.remove('d-none');
+      if (progressBox) progressBox.classList.remove('d-none');
+    });
+  })();
+</script>
+{% endblock %}

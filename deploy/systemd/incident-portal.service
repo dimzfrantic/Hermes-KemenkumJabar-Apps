@@ -1,0 +1,12 @@
+[Unit]
+Description=Incident Portal
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/kemenkumjabar/apps/incident-portal
+ExecStart=/opt/kemenkumjabar/apps/incident-portal/.venv/bin/gunicorn -w 2 -b 0.0.0.0:5050 wsgi:app
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

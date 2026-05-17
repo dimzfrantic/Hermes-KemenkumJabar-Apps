@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard Tiket Saya{% endblock %}
+
+{% macro status_class(status) -%}
+  {%- set value = (status or '')|upper -%}
+  {%- if value == 'OPEN' -%}status-open
+  {%- elif value == 'IN_PROGRESS' -%}status-progress
+  {%- elif value == 'PENDING' -%}status-pending
+  {%- elif value == 'RESOLVED' -%}status-resolved
+  {%- elif value == 'CLOSED' -%}status-closed
+  {%- else -%}status-open
+  {%- endif -%}
+{%- endmacro %}
+
+{% block content %}
+<div class="hero-banner">
+  <div class="section-head mb-0">
+    <div>
+      <div class="hero-eyebrow"><i class="bi bi-life-preserver"></i> Portal Pegawai</div>
+      <h1 class="hero-title">Tiket Saya</h1>
+      <p class="hero-text">Pantau gangguan TI yang Anda laporkan, lihat update terbaru, dan buka detail tiket tanpa kehilangan konteks penanganan.</p>
+    </div>
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="{{ url_for('portal.new_ticket') }}"><i class="bi bi-plus-circle me-2"></i>Buat Tiket Baru</a>
+    </div>
+  </div>
+</div>
+
+<div class="metric-grid">
+  <article class="metric-card">
+    <div class="metric-label">Total tiket</div>
+    <div class="metric-value">{{ tickets|length }}</div>
+    <p class="metric-help">Seluruh tiket yang saat ini tercatat pada akun Anda.</p>
+  </article>
+  <article class="metric-card">
+    <div class="metric-label">Butuh perhatian</div>
+    <div class="metric-value">{{ tickets|selectattr('status_cache', 'equalto', 'OPEN')|list|length + tickets|selectattr('status_cache', 'equalto', 'IN_PROGRESS')|list|length + tickets|selectattr('status_cache', 'equalto', 'PENDING')|list|length }}</div>
+    <p class="metric-help">Tiket yang masih aktif dan masih memerlukan pemantauan.</p>
+  </article>
+  <article class="metric-card">
+    <div class="metric-label">Sudah selesai</div>
+    <div class="metric-value">{{ tickets|selectattr('status_cache', 'equalto', 'RESOLVED')|list|length + tickets|selectattr('status_cache', 'equalto', 'CLOSED')|list|length }}</div>
+    <p class="metric-help">Tiket yang telah mencapai status RESOLVED atau CLOSED.</p>
+  </article>
+</div>
+
+<div class="panel-shell p-4">
+  <div class="section-head">
+    <div>
+      <h2 class="section-title">Daftar tiket terbaru</h2>
+      <div class="section-subtitle">Gunakan tombol detail untuk melihat riwayat, catatan terakhir, dan melakukan sinkron ulang bila diperlukan.</div>
+    </div>
+  </div>
+
+  {% if tickets %}
+  <div class="table-responsive">
+    <table class="table ticket-table align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Tiket</th>
+          <th>Lokasi</th>
+          <th>Masalah</th>
+          <th>Status</th>
+          <th>Update terakhir</th>
+          <th class="text-end">Aksi</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ticket in tickets %}
+        <tr>
+          <td>
+            {% set meta = ticket_meta.get(ticket.id, {}) %}
+            <div class="ticket-alias">
+              <strong>{{ ticket.ticket_alias }}</strong>
+              <span class="mono">{{ ticket.ticket_code }}</span>
+              <span class="ticket-note">{{ meta.get('category_label', ticket.category) }}</span>
+            </div>
+          </td>
+          <td>{{ ticket.location }}</td>
+          <td>
+            <div class="ticket-problem">{{ ticket.problem_summary }}</div>
+            <div class="ticket-note">{{ ticket.detail_description or 'Belum ada detail tambahan.' }}</div>
+          </td>
+          <td><span class="status-pill {{ status_class(ticket.status_cache) }}">{{ ticket.status_cache }}</span></td>
+          <td>
+            <div class="ticket-problem fw-semibold">{{ ticket.last_update_cache or '-' }}</div>
+            <div class="ticket-note">{{ ticket.last_note_cache or 'Belum ada catatan tambahan.' }}</div>
+          </td>
+          <td class="text-end">
+            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('portal.ticket_detail', ticket_id=ticket.id) }}" data-nav-once="true" data-loading-text="<span class='spinner-border spinner-border-sm me-2' role='status' aria-hidden='true'></span>Membuka detail...">Detail</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="fw-semibold mb-2">Belum ada tiket pada akun Anda</div>
+    <div class="mb-3">Jika ada kendala TI, buat tiket baru agar tim dapat menindaklanjuti lebih cepat.</div>
+    <a class="btn btn-primary" href="{{ url_for('portal.new_ticket') }}"><i class="bi bi-plus-circle me-2"></i>Buat tiket pertama</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

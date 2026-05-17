@@ -1,0 +1,599 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Legal Drafter{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4><i class="bi bi-speedometer2"></i> Dashboard - Bidang Legal Drafter</h4>
+    {% if is_pimpinan %}
+    <span class="badge bg-primary fs-6"><i class="bi bi-shield-check"></i> Akses Pimpinan</span>
+    {% else %}
+    <span class="badge bg-secondary fs-6"><i class="bi bi-eye"></i> Akses Publik</span>
+    {% endif %}
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="GET" class="row g-2 align-items-end">
+            <div class="col-auto">
+                <label class="form-label">Dari Tanggal</label>
+                <input type="date" name="tanggal_dari" class="form-control form-control-sm" value="{{ tanggal_dari }}">
+            </div>
+            <div class="col-auto">
+                <label class="form-label">Sampai Tanggal</label>
+                <input type="date" name="tanggal_sampai" class="form-control form-control-sm" value="{{ tanggal_sampai }}">
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i> Filter</button>
+                <a href="{{ url_for('dashboard.index') }}" class="btn btn-outline-secondary btn-sm">Reset</a>
+            </div>
+            {% if tanggal_dari or tanggal_sampai %}
+            <div class="col-auto">
+                <span class="badge bg-info fs-6">
+                    {% if tanggal_dari %}{{ tanggal_dari }}{% else %}...{% endif %}
+                    s/d
+                    {% if tanggal_sampai %}{{ tanggal_sampai }}{% else %}...{% endif %}
+                </span>
+            </div>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+{# ===== RINGKASAN (KLIKABLE) ===== #}
+<div class="row mb-4" id="ringkasanCards">
+    <div class="col-md-3">
+        <div class="card text-center border-primary ringkasan-card" onclick="loadRecordsFromCard('semua')" role="button">
+            <div class="card-body">
+                <h3 class="text-primary">{{ ringkasan.total }}</h3>
+                <small class="text-muted">Total Rapat</small>
+                {% if is_pimpinan %}<div><small class="text-primary"><i class="bi bi-box-arrow-in-right"></i> Klik untuk lihat data</small></div>{% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center border-success ringkasan-card" onclick="loadRecordsFromCard('selesai')" role="button">
+            <div class="card-body">
+                <h3 class="text-success">{{ ringkasan.per_hasil.get('Selesai', 0) }}</h3>
+                <small class="text-muted">Selesai</small>
+                {% if is_pimpinan %}<div><small class="text-success"><i class="bi bi-box-arrow-in-right"></i> Klik untuk lihat data</small></div>{% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center border-danger ringkasan-card" onclick="loadRecordsFromCard('dikembalikan')" role="button">
+            <div class="card-body">
+                <h3 class="text-danger">{{ ringkasan.per_hasil.get('Dikembalikan', 0) }}</h3>
+                <small class="text-muted">Dikembalikan</small>
+                {% if is_pimpinan %}<div><small class="text-danger"><i class="bi bi-box-arrow-in-right"></i> Klik untuk lihat data</small></div>{% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center border-info ringkasan-card" onclick="loadRecordsFromCard('ods')" role="button">
+            <div class="card-body">
+                <h3 class="text-info">{{ ringkasan.per_metode.get('One Day Service', 0) }}</h3>
+                <small class="text-muted">One Day Service</small>
+                {% if is_pimpinan %}<div><small class="text-info"><i class="bi bi-box-arrow-in-right"></i> Klik untuk lihat data</small></div>{% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if is_pimpinan %}
+{# ===== GRAFIK ===== #}
+<div class="row mb-4">
+    <div class="col-md-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header">Per Daerah (Terbanyak)</div>
+            <div class="card-body"><canvas id="chartDaerah" height="280"></canvas></div>
+        </div>
+    </div>
+    <div class="col-md-6 mb-3">
+        <div class="row">
+            <div class="col-6">
+                <div class="card mb-3">
+                    <div class="card-header">Per Jenis</div>
+                    <div class="card-body text-center"><canvas id="chartJenis" height="180"></canvas></div>
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="card mb-3">
+                    <div class="card-header">Per Status</div>
+                    <div class="card-body text-center"><canvas id="chartStatus" height="180"></canvas></div>
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="card">
+                    <div class="card-header">Per Metode</div>
+                    <div class="card-body text-center"><canvas id="chartMetode" height="180"></canvas></div>
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="card">
+                    <div class="card-header">Per Tim Kerja</div>
+                    <div class="card-body text-center"><canvas id="chartTimKerja" height="180"></canvas></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ===== DRILL-DOWN PIMPINAN ===== #}
+<div class="card" id="drillSection">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <strong id="sectionTitle"><i class="bi bi-diagram-3"></i> Drill-Down Data</strong>
+        <div>
+            <button class="btn btn-sm btn-outline-primary" onclick="loadDrill()" id="btnDrill">
+                <i class="bi bi-diagram-3"></i> Drill-Down
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" id="btnReset" style="display:none">
+                <i class="bi bi-arrow-counterclockwise"></i> Kembali ke Awal
+            </button>
+        </div>
+    </div>
+    <div class="card-body">
+        <nav id="breadcrumb" class="mb-3" style="display:none">
+            <ol class="breadcrumb mb-0" id="breadcrumbList"></ol>
+        </nav>
+
+        <div class="mb-3" id="searchBox" style="display:none">
+            <div class="input-group input-group-sm" style="max-width:400px">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input type="text" class="form-control" id="searchInput" placeholder="Cari di semua data (contoh: perubahan, bogor...)" oninput="searchDebounce()">
+                <button class="btn btn-outline-secondary" onclick="clearSearch()" title="Bersihkan"><i class="bi bi-x-lg"></i></button>
+            </div>
+        </div>
+
+        <div id="loading" class="text-center py-5" style="display:none">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2 text-muted">Memuat data...</p>
+        </div>
+
+        <div id="breakdownView"></div>
+        <div id="recordsView"></div>
+    </div>
+</div>
+
+{% elif not is_pimpinan %}
+<div class="alert alert-info mt-3">
+    <i class="bi bi-info-circle"></i> Data detail hanya tersedia untuk pimpinan.
+    Silakan <a href="{{ url_for('auth.login') }}">login</a> sebagai pimpinan.
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.ringkasan-card {
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+.ringkasan-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+{% if is_pimpinan %}
+<script>
+const tanggalDari = "{{ tanggal_dari }}";
+const tanggalSampai = "{{ tanggal_sampai }}";
+let currentFilters = {};
+const labelMap = {
+    daerah: 'Daerah', jenis: 'Jenis', program_pembentukan: 'Program Pembentukan',
+    urusan_pemerintahan: 'Urusan Pemerintahan', tim_kerja: 'Tim Kerja',
+    hasil: 'Hasil', metode: 'Metode'
+};
+
+function apiUrl(path, extraFilters) {
+    let params = new URLSearchParams();
+    if (tanggalDari) params.set('tanggal_dari', tanggalDari);
+    if (tanggalSampai) params.set('tanggal_sampai', tanggalSampai);
+    if (extraFilters) {
+        for (let [k, v] of Object.entries(extraFilters)) {
+            params.set(k, v);
+        }
+    }
+    return path + '?' + params.toString();
+}
+
+function drillUrl() {
+    let params = new URLSearchParams();
+    if (tanggalDari) params.set('tanggal_dari', tanggalDari);
+    if (tanggalSampai) params.set('tanggal_sampai', tanggalSampai);
+    for (let [k, v] of Object.entries(currentFilters)) {
+        params.set(k, v);
+    }
+    return '/api/drill?' + params.toString();
+}
+
+function showLoading(show) {
+    document.getElementById('loading').style.display = show ? '' : 'none';
+}
+
+function updateBreadcrumb() {
+    if (isSearching) return;
+    try {
+        const bc = document.getElementById('breadcrumb');
+        const list = document.getElementById('breadcrumbList');
+        if (!bc || !list) { return; }
+        const entries = Object.entries(currentFilters);
+        if (entries.length === 0) {
+            bc.style.display = 'none';
+            document.getElementById('btnReset').style.display = 'none';
+            return;
+        }
+        bc.style.display = '';
+        document.getElementById('btnReset').style.display = '';
+        list.innerHTML = '<li class="breadcrumb-item"><a href="#" onclick="resetAll();return false">Awal</a></li>';
+        entries.forEach(([k, v], i) => {
+            const isLast = i === entries.length - 1;
+            if (isLast) {
+                list.innerHTML += `<li class="breadcrumb-item active">${labelMap[k]}: <strong>${v}</strong></li>`;
+            } else {
+                list.innerHTML += `<li class="breadcrumb-item"><a href="#" onclick="goTo(${i});return false">${labelMap[k]}: ${v}</a></li>`;
+            }
+        });
+    } catch(e) { return; }
+}
+
+function resetAll() {
+    currentFilters = {};
+    isSearching = false;
+    clearTimeout(searchTimer);
+    document.getElementById('searchInput').value = '';
+    updateBreadcrumb();
+    loadDrill();
+}
+
+function goTo(index) {
+    const entries = Object.entries(currentFilters);
+    const newFilters = {};
+    for (let i = 0; i <= index; i++) {
+        newFilters[entries[i][0]] = entries[i][1];
+    }
+    currentFilters = newFilters;
+    updateBreadcrumb();
+    loadDrill();
+}
+
+function selectItem(kategori, nilai) {
+    isSearching = false;
+    clearTimeout(searchTimer);
+    currentFilters[kategori] = nilai;
+    try { document.getElementById('searchInput').value = ''; } catch(e) {}
+    loadDrill();
+}
+
+// === Load records dari kartu ringkasan ===
+function loadRecordsFromCard(tipe) {
+    isSearching = false;
+    currentFilters = {};
+    let extraFilters = {};
+    let title = '';
+
+    if (tipe === 'selesai') {
+        extraFilters = {hasil: 'Selesai'};
+        title = 'Data Selesai';
+    } else if (tipe === 'dikembalikan') {
+        extraFilters = {hasil: 'Dikembalikan'};
+        title = 'Data Dikembalikan';
+    } else if (tipe === 'ods') {
+        extraFilters = {metode: 'One Day Service'};
+        title = 'Data One Day Service';
+    } else {
+        title = 'Semua Data';
+    }
+
+    // Bersihkan semua view
+    document.getElementById('sectionTitle').innerHTML = title;
+    document.getElementById('breadcrumbList').innerHTML = '';
+    document.getElementById('breadcrumb').style.display = 'none';
+    document.getElementById('btnReset').style.display = 'none';
+    document.getElementById('breakdownView').innerHTML = '';
+    document.getElementById('recordsView').innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary"></div></div>';
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('searchBox').style.display = '';
+
+    fetch(apiUrl('/api/rapat-harmonisasi', extraFilters))
+        .then(r => r.json())
+        .then(data => {
+            const container = document.getElementById('recordsView');
+            const rows = data.items || [];
+
+            if (rows.length === 0) {
+                container.innerHTML = '<p class="text-muted py-3">Tidak ada data.</p>';
+                return;
+            }
+
+            let html = '<div class="table-responsive"><table class="table table-striped table-hover table-sm"><thead class="table-dark"><tr>' +
+                '<th>#</th><th>Tanggal</th><th>Daerah</th><th>Jenis</th>' +
+                '<th>Program</th><th>Urusan</th><th>Nama Raperda</th>' +
+                '<th>Tim</th><th>Hasil</th><th>Metode</th></tr></thead><tbody>';
+
+            rows.forEach((r, i) => {
+                const h = r.hasil === 'Selesai'
+                    ? '<span class="badge bg-success">Selesai</span>'
+                    : '<span class="badge bg-danger">Dikembalikan</span>';
+                const m = r.metode === 'One Day Service'
+                    ? '<span class="badge bg-info">ODS</span>'
+                    : '<span class="badge bg-secondary">Normal</span>';
+                html += '<tr><td>' + (i+1) + '</td><td>' + r.tanggal_rapat + '</td><td>' + r.daerah + '</td><td>' + r.jenis + '</td>' +
+                    '<td>' + r.program_pembentukan + '</td><td style="white-space:normal;min-width:200px">' + r.urusan_pemerintahan + '</td>' +
+                    '<td style="white-space:normal;min-width:250px">' + r.nama_raperda + '</td>' +
+                    '<td>' + r.tim_kerja + '</td><td>' + h + '</td><td>' + m + '</td></tr>';
+            });
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+            document.getElementById('drillSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        })
+        .catch(() => {
+            document.getElementById('recordsView').innerHTML = '<div class="alert alert-danger">Gagal memuat data</div>';
+        });
+}
+
+// === Load drill-down ===
+function loadDrill() {
+    if (isSearching) return;
+    const url = drillUrl();
+    document.getElementById('sectionTitle').innerHTML = '<i class="bi bi-diagram-3"></i> Drill-Down Data';
+    showLoading(true);
+    document.getElementById('breakdownView').innerHTML = '';
+    document.getElementById('recordsView').innerHTML = '';
+    try {
+        document.getElementById('breadcrumbList').innerHTML = '';
+    } catch(e) {}
+    document.getElementById('breadcrumb').style.display = 'none';
+
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            showLoading(false);
+            if (data.path) {
+                currentFilters = {};
+                data.path.forEach(p => currentFilters[p.kategori] = p.nilai);
+                try { updateBreadcrumb(); } catch(e) {}
+            }
+            if (data.type === 'breakdown') {
+                renderBreakdown(data);
+            } else if (data.type === 'records') {
+                renderRecords(data);
+            }
+        })
+        .catch(err => {
+            showLoading(false);
+            document.getElementById('breakdownView').innerHTML =
+                '<div class="alert alert-danger">Gagal memuat data</div>';
+        });
+}
+
+function escapeHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function renderBreakdown(data) {
+    const container = document.getElementById('breakdownView');
+    const label = labelMap[data.kategori] || data.kategori;
+    let html = `<h5 class="mb-3">Pilih ${label} <span class="badge bg-primary">${data.total} total</span></h5>`;
+    html += '<div class="list-group">';
+    data.items.forEach(item => {
+        html += `<a href="#" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                    onclick="selectItem('${data.kategori}', '${escapeHtml(item.nilai)}');return false">
+                    <span>${item.nilai}</span>
+                    <span class="badge bg-primary rounded-pill">${item.jumlah}</span>
+                </a>`;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+    document.getElementById('searchBox').style.display = '';
+    document.getElementById('searchInput').value = '';
+}
+
+function renderRecords(data, title) {
+    const container = document.getElementById('recordsView');
+    const label = title || 'Data Detail';
+    // Handle both 'items' (from /api/rapat-harmonisasi) and 'records' (from /api/drill)
+    const rows = data.items || data.records || [];
+    let html = `<h5 class="mb-3">${label} <span class="badge bg-success">${data.total} record</span></h5>`;
+    if (rows.length === 0) {
+        html += '<p class="text-muted">Tidak ada data.</p>';
+    } else {
+        html += `<div class="table-responsive">
+            <table class="table table-striped table-hover table-sm">
+                <thead class="table-dark">
+                    <tr>
+                        <th>#</th><th>Tanggal</th><th>Daerah</th><th>Jenis</th>
+                        <th>Program</th><th>Urusan</th><th>Nama Raperda</th>
+                        <th>Tim</th><th>Hasil</th><th>Metode</th>
+                    </tr>
+                </thead><tbody>`;
+        rows.forEach((r, i) => {
+            const hasilBadge = r.hasil === 'Selesai'
+                ? '<span class="badge bg-success">Selesai</span>'
+                : '<span class="badge bg-danger">Dikembalikan</span>';
+            const metodeBadge = r.metode === 'One Day Service'
+                ? '<span class="badge bg-info">ODS</span>'
+                : '<span class="badge bg-secondary">Normal</span>';
+            html += `<tr>
+                <td>${i+1}</td>
+                <td>${r.tanggal_rapat}</td>
+                <td>${r.daerah}</td>
+                <td>${r.jenis}</td>
+                <td>${r.program_pembentukan}</td>
+                <td style="white-space:normal;min-width:200px">${r.urusan_pemerintahan}</td>
+                <td style="white-space:normal;min-width:250px">${r.nama_raperda}</td>
+                <td>${r.tim_kerja}</td>
+                <td>${hasilBadge}</td>
+                <td>${metodeBadge}</td>
+            </tr>`;
+        });
+        html += '</tbody></table></div>';
+    }
+    container.innerHTML = html;
+    document.getElementById('searchBox').style.display = '';
+    // Jangan clear searchInput di sini, biarkan user yang kontrol
+}
+
+// === Search dari API ===
+let searchTimer = null;
+let isSearching = false;
+
+function searchDebounce() {
+    clearTimeout(searchTimer);
+    const q = document.getElementById('searchInput').value.trim();
+    if (q.length === 0) {
+        isSearching = false;
+        loadDrill();
+        return;
+    }
+    if (q.length < 2) return;
+    isSearching = true;
+    searchTimer = setTimeout(() => searchData(q), 300);
+}
+
+function searchData(q) {
+    let params = new URLSearchParams();
+    params.set('q', q);
+    params.set('per_page', 100);
+    if (tanggalDari) params.set('tanggal_dari', tanggalDari);
+    if (tanggalSampai) params.set('tanggal_sampai', tanggalSampai);
+
+    fetch('/api/cari?' + params.toString())
+        .then(r => r.json())
+        .then(data => {
+            if (!isSearching) return;
+            
+            // Bersihkan semua, tampilkan tabel hasil saja
+            document.getElementById('sectionTitle').innerHTML = '<i class="bi bi-search"></i> Cari: "' + q + '"';
+            document.getElementById('btnReset').style.display = '';
+            document.getElementById('breadcrumbList').innerHTML = '';
+            document.getElementById('breadcrumb').style.display = 'none';
+            document.getElementById('breakdownView').innerHTML = '';
+            document.getElementById('loading').style.display = 'none';
+
+            const container = document.getElementById('recordsView');
+            const rows = data.items || [];
+            
+            if (rows.length === 0) {
+                container.innerHTML = '<p class="text-muted py-3">Tidak ada data untuk "' + q + '"</p>';
+                return;
+            }
+
+            let html = '<div class="table-responsive"><table class="table table-striped table-hover table-sm"><thead class="table-dark"><tr>' +
+                '<th>#</th><th>Tanggal</th><th>Daerah</th><th>Jenis</th>' +
+                '<th>Program</th><th>Urusan</th><th>Nama Raperda</th>' +
+                '<th>Tim</th><th>Hasil</th><th>Metode</th></tr></thead><tbody>';
+
+            rows.forEach((r, i) => {
+                const h = r.hasil === 'Selesai'
+                    ? '<span class="badge bg-success">Selesai</span>'
+                    : '<span class="badge bg-danger">Dikembalikan</span>';
+                const m = r.metode === 'One Day Service'
+                    ? '<span class="badge bg-info">ODS</span>'
+                    : '<span class="badge bg-secondary">Normal</span>';
+                html += '<tr><td>' + (i+1) + '</td><td>' + r.tanggal_rapat + '</td><td>' + r.daerah + '</td><td>' + r.jenis + '</td>' +
+                    '<td>' + r.program_pembentukan + '</td><td style="white-space:normal;min-width:200px">' + r.urusan_pemerintahan + '</td>' +
+                    '<td style="white-space:normal;min-width:250px">' + r.nama_raperda + '</td>' +
+                    '<td>' + r.tim_kerja + '</td><td>' + h + '</td><td>' + m + '</td></tr>';
+            });
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+            document.getElementById('drillSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        })
+        .catch(() => {
+            document.getElementById('recordsView').innerHTML = '<p class="text-danger">Gagal mencari data</p>';
+        });
+}
+
+function clearSearch() {
+    isSearching = false;
+    clearTimeout(searchTimer);
+    document.getElementById('searchInput').value = '';
+    loadDrill();
+}
+
+// === Charts ===
+function loadCharts() {
+    let params = new URLSearchParams();
+    if (tanggalDari) params.set('tanggal_dari', tanggalDari);
+    if (tanggalSampai) params.set('tanggal_sampai', tanggalSampai);
+
+    fetch('/api/rekapitulasi?' + params.toString())
+        .then(r => r.json())
+        .then(data => {
+            renderChartDaerah(data.per_daerah);
+            renderChartDonut('chartJenis', data.per_jenis);
+            renderChartDonut('chartStatus', data.per_hasil);
+            renderChartDonut('chartMetode', data.per_metode);
+            renderChartDonut('chartTimKerja', data.per_tim_kerja);
+        })
+        .catch(() => {});
+}
+
+const CHART_COLORS = [
+    '#0d6efd','#198754','#ffc107','#dc3545','#6c757d',
+    '#0dcaf0','#6610f2','#fd7e14','#20c997','#e83e8c',
+    '#17a2b8','#343a40','#495057','#adb5bd','#212529',
+];
+
+function renderChartDaerah(perDaerah) {
+    const entries = Object.entries(perDaerah).sort((a,b) => b[1] - a[1]);
+    new Chart(document.getElementById('chartDaerah'), {
+        type: 'bar',
+        data: {
+            labels: entries.map(e => e[0]),
+            datasets: [{
+                label: 'Jumlah Rapat',
+                data: entries.map(e => e[1]),
+                backgroundColor: CHART_COLORS.slice(0, entries.length),
+                borderRadius: 4,
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { beginAtZero: true, ticks: { stepSize: 1 } }
+            }
+        }
+    });
+}
+
+function renderChartDonut(canvasId, data) {
+    const entries = Object.entries(data);
+    const el = document.getElementById(canvasId);
+    if (!el || entries.length === 0) return;
+    new Chart(el, {
+        type: 'doughnut',
+        data: {
+            labels: entries.map(e => e[0]),
+            datasets: [{
+                data: entries.map(e => e[1]),
+                backgroundColor: CHART_COLORS.slice(0, entries.length),
+                borderWidth: 2,
+                borderColor: '#fff',
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } }
+            }
+        }
+    });
+}
+
+// Load drill-down and charts on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadDrill();
+    loadCharts();
+});
+document.getElementById('btnReset').addEventListener('click', resetAll);
+</script>
+{% endif %}
+{% endblock %}

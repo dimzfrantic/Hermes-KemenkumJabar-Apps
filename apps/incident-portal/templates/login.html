@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block title %}Login | Incident Portal{% endblock %}
+{% block content %}
+<div class="auth-shell">
+  <div class="auth-card">
+    <div class="auth-grid">
+      <section class="auth-hero">
+        <div class="auth-kicker"><i class="bi bi-shield-check"></i> Kanwil Kemenkum Jawa Barat</div>
+        <h1 class="auth-title">Portal Pelaporan Insiden TI</h1>
+        <p class="auth-copy">
+          Masuk menggunakan NIP dan password portal untuk membuat tiket baru, memantau progres penanganan,
+          dan memastikan setiap gangguan tercatat dengan rapi.
+        </p>
+        <div class="auth-points">
+          <div class="auth-point">
+            <i class="bi bi-person-badge"></i>
+            <div>
+              <strong class="d-block mb-1">Akses berbasis NIP</strong>
+              <span class="auth-point-copy">Gunakan data pegawai yang sudah diimpor oleh admin portal.</span>
+            </div>
+          </div>
+          <div class="auth-point">
+            <i class="bi bi-lightning-charge"></i>
+            <div>
+              <strong class="d-block mb-1">Pelaporan lebih cepat</strong>
+              <span class="auth-point-copy">Form tiket disiapkan agar kendala TI bisa langsung masuk ke alur penanganan.</span>
+            </div>
+          </div>
+          <div class="auth-point">
+            <i class="bi bi-arrow-repeat"></i>
+            <div>
+              <strong class="d-block mb-1">Status selalu terpantau</strong>
+              <span class="auth-point-copy">Pantau update terakhir tanpa perlu menanyakan ulang ke petugas.</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="auth-form">
+        <div class="mb-4">
+          <div class="hero-eyebrow mb-3"><i class="bi bi-box-arrow-in-right"></i> Login Pegawai</div>
+          <h2 class="section-title fs-3">Masuk ke portal</h2>
+          <p class="section-subtitle">Pastikan NIP dan password sesuai. Jika ini login pertama, Anda akan diminta mengganti password setelah berhasil masuk.</p>
+        </div>
+
+        <form method="post" data-submit-once="true" novalidate>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="mb-3">
+            <label class="form-label" for="nip">NIP</label>
+            <input class="form-control" id="nip" type="text" name="nip" inputmode="numeric" autocomplete="username" placeholder="Masukkan NIP" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="password">Password</label>
+            <div class="input-group">
+              <input class="form-control" id="password" type="password" name="password" autocomplete="current-password" placeholder="Masukkan password portal" required>
+              <button class="btn password-toggle-btn" type="button" data-password-toggle data-password-target="password" aria-pressed="false">Lihat</button>
+            </div>
+          </div>
+          <div class="d-grid mt-4">
+            <button class="btn btn-dark" type="submit" data-submit-once-button="true" data-loading-text="<span class='spinner-border spinner-border-sm me-2' role='status' aria-hidden='true'></span>Memverifikasi...">Login ke Portal</button>
+          </div>
+          <p class="muted-support mt-3 mb-0">Bila kredensial belum aktif atau lupa password, hubungi admin portal atau tim TI.</p>
+        </form>
+      </section>
+    </div>
+  </div>
+</div>
+{% endblock %}

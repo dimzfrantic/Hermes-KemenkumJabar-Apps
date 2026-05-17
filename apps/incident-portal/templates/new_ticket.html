@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+{% block title %}Buat Tiket Baru{% endblock %}
+
+{% block extra_head %}
+<style>
+  .new-ticket-shell {
+    max-width: 960px;
+    margin: 0 auto;
+  }
+
+  .new-ticket-shell .hero-banner {
+    margin-bottom: 1.25rem;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="new-ticket-shell">
+  <div class="hero-banner">
+    <div class="section-head mb-0">
+      <div>
+        <div class="hero-eyebrow"><i class="bi bi-pencil-square"></i> Tiket Baru</div>
+        <h1 class="hero-title">Form Pelaporan Insiden TI</h1>
+        <p class="hero-text">Isi informasi inti dengan jelas agar petugas lebih cepat memahami lokasi, kategori, dan gejala kendala yang sedang Anda alami.</p>
+      </div>
+      <div class="soft-badge"><i class="bi bi-shield-check"></i> Satu laporan langsung masuk ke alur penanganan</div>
+    </div>
+  </div>
+
+  <div class="row g-4 justify-content-center">
+    <div class="col-lg-12">
+    <div class="card card-soft">
+      <div class="card-body p-4 p-lg-5 form-section">
+        <div class="section-head">
+          <div>
+            <h2 class="section-title">Isi detail gangguan</h2>
+            <div class="section-subtitle">Fokus pada kategori, lokasi, ringkasan masalah, dan lampiran bila ada bukti pendukung.</div>
+          </div>
+          <a class="btn btn-outline-secondary" href="{{ url_for('portal.dashboard') }}" data-nav-once="true" data-loading-text="<span class='spinner-border spinner-border-sm me-2' role='status' aria-hidden='true'></span>Kembali...">Kembali</a>
+        </div>
+
+        <form method="post" enctype="multipart/form-data" data-submit-once="true">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label" for="category">Kategori</label>
+              <select class="form-select" id="category" name="category" required>
+                <option value="">Pilih kategori</option>
+                {% for key, label in categories.items() %}
+                <option value="{{ key }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="contact_phone">Nomor HP</label>
+              <input class="form-control" id="contact_phone" name="contact_phone" value="{{ current_user.phone or '' }}" placeholder="Contoh: 0812xxxxxx">
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="location">Lokasi</label>
+              <input class="form-control" id="location" name="location" placeholder="Contoh: Ruang Keuangan" required>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="problem_summary">Ringkasan Masalah</label>
+              <input class="form-control" id="problem_summary" name="problem_summary" placeholder="Contoh: Wifi tidak bisa konek" required>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="detail_description">Detail Tambahan</label>
+              <textarea class="form-control" id="detail_description" name="detail_description" rows="5" placeholder="Tuliskan gejala, dampak, atau kondisi tambahan bila perlu"></textarea>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="attachment">Lampiran</label>
+              <input class="form-control" id="attachment" type="file" name="attachment" accept=".png,.jpg,.jpeg,.webp,.pdf">
+              <div class="form-text">Opsional. Format yang didukung: png, jpg, jpeg, webp, dan pdf.</div>
+            </div>
+          </div>
+
+          <div class="info-grid mt-4 mb-4">
+            <div class="info-card">
+              <strong>Tips isi cepat</strong>
+              <p>Sebutkan gejala utama terlebih dahulu, misalnya internet putus, printer tidak terhubung, atau aplikasi tidak bisa dibuka.</p>
+            </div>
+            <div class="info-card">
+              <strong>Lokasi yang jelas</strong>
+              <p>Gunakan nama ruangan atau unit yang paling mudah dikenali agar petugas tidak perlu menebak titik gangguan.</p>
+            </div>
+            <div class="info-card">
+              <strong>Lampiran bila perlu</strong>
+              <p>Tambahkan foto error, tampilan layar, atau dokumen pendukung untuk mempercepat diagnosis awal.</p>
+            </div>
+          </div>
+
+          <div class="d-flex flex-wrap gap-2">
+            <button class="btn btn-primary" type="submit" data-submit-once-button="true" data-loading-text="<span class='spinner-border spinner-border-sm me-2' role='status' aria-hidden='true'></span>Mengirim tiket...">Kirim Tiket</button>
+            <a class="btn btn-outline-secondary" href="{{ url_for('portal.dashboard') }}" data-nav-once="true" data-loading-text="<span class='spinner-border spinner-border-sm me-2' role='status' aria-hidden='true'></span>Kembali...">Batal</a>
+          </div>
+        </form>
+      </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

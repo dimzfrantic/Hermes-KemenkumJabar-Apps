@@ -1,0 +1,311 @@
+{% extends 'base.html' %}
+{% block title %}Review Job | {{ app_name }}{% endblock %}
+{% block content %}
+<section class="hero mb-4">
+  <div class="row align-items-center g-4">
+    <div class="col-lg-8">
+      <div class="eyebrow mb-3">Review batch</div>
+      <h1 class="display-6 fw-bold mb-3">Review Batch Generate</h1>
+      <p class="hero-copy mb-0">Pantau status proses generate, jumlah peserta yang berhasil maupun gagal, lalu gunakan kontrol batch dan salin link Google Drive setelah proses selesai.</p>
+    </div>
+    <div class="col-lg-4 text-lg-end">
+      <a class="btn btn-outline-secondary" href="{{ url_for('certificates.dashboard') }}">Dashboard</a>
+    </div>
+  </div>
+</section>
+
+{% if start_info %}
+<div class="alert alert-{{ start_info.tone }} mb-3" id="job-start-info">{{ start_info.message }}</div>
+{% endif %}
+
+<div class="row g-3 mb-4 app-review-stats">
+  <div class="col-md-3"><div class="stat app-stat-card"><div class="small-muted">Status Batch</div><div class="mt-3 fs-5 fw-bold"><span class="status-pill status-{{ summary.status }}" id="job-status">{{ summary.status_label }}</span></div></div></div>
+  <div class="col-md-3"><div class="stat app-stat-card"><div class="small-muted">Total Peserta</div><div class="metric-value" id="job-total">{{ summary.total_rows }}</div></div></div>
+  <div class="col-md-3"><div class="stat app-stat-card"><div class="small-muted">Berhasil</div><div class="metric-value text-success" id="job-success">{{ summary.success_rows }}</div></div></div>
+  <div class="col-md-3"><div class="stat app-stat-card"><div class="small-muted">Gagal</div><div class="metric-value text-danger" id="job-failed">{{ summary.failed_rows }}</div></div></div>
+</div>
+
+<div class="card mb-4 app-workspace-card">
+  <div class="card-body p-4 p-lg-5">
+    <div class="d-flex justify-content-between align-items-start mb-4 gap-3 flex-wrap">
+      <div>
+        <div class="eyebrow mb-2">Progress control</div>
+        <h2 class="h3 fw-bold mb-1">Progres job</h2>
+        <p class="small-muted mb-0">Setiap sertifikat diproses menjadi PDF lalu dikirim ke folder Google Drive yang dipilih.</p>
+      </div>
+      <div class="d-flex gap-2 flex-wrap align-items-center" id="job-action-area">
+        {% if job.status == 'validated' %}
+        <form method="post" action="{{ url_for('certificates.start_job', job_uuid=job.job_uuid) }}">
+          <button class="btn btn-primary">Generate</button>
+        </form>
+        {% endif %}
+        {% if summary.pausable %}
+        <form method="post" action="{{ url_for('certificates.pause_job', job_uuid=job.job_uuid) }}">
+          <button class="btn btn-outline-warning" id="pause-job-button">Pause</button>
+        </form>
+        {% elif summary.pause_requested %}
+        <button class="btn btn-outline-warning" type="button" id="pause-job-button" disabled>Pause Diproses...</button>
+        {% endif %}
+        {% if summary.resumable %}
+        <form method="post" action="{{ url_for('certificates.resume_job', job_uuid=job.job_uuid) }}">
+          <button class="btn btn-primary" id="resume-job-button">Lanjutkan Proses</button>
+        </form>
+        {% endif %}
+        {% if summary.stoppable and not summary.stop_requested %}
+        <form method="post" action="{{ url_for('certificates.stop_job', job_uuid=job.job_uuid) }}">
+          <button class="btn btn-outline-danger" id="stop-job-button">Stop</button>
+        </form>
+        {% elif summary.stop_requested %}
+        <button class="btn btn-outline-danger" type="button" id="stop-job-button" disabled>Stop Diproses...</button>
+        {% endif %}
+        <button class="btn btn-outline-primary {% if not summary.completed %}disabled{% endif %}" type="button" id="copy-drive-link-button" data-folder-link="{{ summary.folder_link or '' }}" {% if not summary.completed %}disabled{% endif %}>Copy Link Drive</button>
+      </div>
+    </div>
+
+    <div class="surface-soft app-progress-panel">
+      <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap mb-3">
+        <div>
+          <div class="section-title mb-1">Progres pemrosesan</div>
+          <div class="small-muted" id="job-progress-text">Diproses {{ summary.processed_rows }} dari {{ summary.total_rows }} peserta.</div>
+        </div>
+        <div class="small-muted" id="job-folder-note">
+          {% if summary.completed %}
+          Link folder Google Drive siap disalin.
+          {% elif summary.resumable %}
+          Proses sedang dijeda. Staging tetap tersimpan sampai batch dilanjutkan atau dihentikan.
+          {% else %}
+          Tombol copy link akan aktif setelah proses selesai.
+          {% endif %}
+        </div>
+      </div>
+      <div class="progress mb-2 {% if summary.status == 'running' %}progress-active{% endif %}" id="job-progress-track">
+        <div class="progress-bar" id="job-progress-bar" role="progressbar" style="width: {{ summary.progress_percent }}%">{{ summary.progress_percent }}%</div>
+      </div>
+      <div class="small mt-3 d-none" id="copy-drive-feedback"></div>
+      <div class="mt-3" id="job-error-summary">{% if summary.error_summary and summary.status in ['completed_with_errors', 'failed', 'paused', 'cancelled'] %}<div class="alert alert-danger mb-0">{{ summary.error_summary }}</div>{% endif %}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card app-workspace-card">
+  <div class="card-body p-4 p-lg-5">
+    <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap mb-3">
+      <div>
+        <div class="eyebrow mb-2">Audit hasil</div>
+        <h2 class="h3 fw-bold mb-1">Ringkasan error</h2>
+        <p class="small-muted mb-0">Baris gagal akan ditampilkan di sini agar operator dapat meninjau hambatan pada batch saat ini.</p>
+      </div>
+    </div>
+    <div id="job-errors-list">
+      {% if summary.latest_errors %}
+        <ul class="mb-0">
+          {% for item in summary.latest_errors %}
+          <li>Baris {{ item.row_number }} | {{ item.participant_name }} | {{ item.message }}</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="mb-0">Belum ada error.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_script %}
+<script>
+const statusUrl = {{ url_for('certificates.job_status', job_uuid=job.job_uuid)|tojson }};
+const finalStates = new Set(['completed', 'completed_with_errors', 'failed', 'cancelled']);
+const statusLabels = {
+  draft: 'Draft',
+  validated: 'Siap Generate',
+  running: 'Sedang Berjalan',
+  paused: 'Pause',
+  completed: 'Selesai',
+  completed_with_errors: 'Selesai Dengan Error',
+  failed: 'Gagal',
+  cancelled: 'Stop'
+};
+const actionUrls = {
+  start: {{ url_for('certificates.start_job', job_uuid=job.job_uuid)|tojson }},
+  pause: {{ url_for('certificates.pause_job', job_uuid=job.job_uuid)|tojson }},
+  resume: {{ url_for('certificates.resume_job', job_uuid=job.job_uuid)|tojson }},
+  stop: {{ url_for('certificates.stop_job', job_uuid=job.job_uuid)|tojson }}
+};
+
+function renderErrors(items) {
+  if (!items.length) {
+    return '<p class="mb-0">Belum ada error.</p>';
+  }
+  const rows = items.map((item) => `<li>Baris ${item.row_number} | ${item.participant_name} | ${item.message}</li>`);
+  return `<ul class="mb-0">${rows.join('')}</ul>`;
+}
+
+function showCopyFeedback(message, isSuccess = true) {
+  const feedback = document.getElementById('copy-drive-feedback');
+  if (!feedback) return;
+  feedback.textContent = message;
+  feedback.classList.remove('d-none', 'text-success', 'text-danger');
+  feedback.classList.add(isSuccess ? 'text-success' : 'text-danger');
+}
+
+function setCopyButton(data) {
+  const button = document.getElementById('copy-drive-link-button');
+  const note = document.getElementById('job-folder-note');
+  const feedback = document.getElementById('copy-drive-feedback');
+  if (!button || !note || !feedback) return;
+  feedback.classList.add('d-none');
+  if (data.completed && data.folder_link) {
+    button.dataset.folderLink = data.folder_link;
+    button.classList.remove('disabled');
+    button.disabled = false;
+    note.textContent = 'Link folder Google Drive siap disalin.';
+  } else if (data.resumable) {
+    button.dataset.folderLink = '';
+    button.classList.add('disabled');
+    button.disabled = true;
+    note.textContent = 'Proses sedang dijeda. Staging tetap tersimpan sampai batch dilanjutkan atau dihentikan.';
+  } else {
+    button.dataset.folderLink = '';
+    button.classList.add('disabled');
+    button.disabled = true;
+    note.textContent = 'Tombol copy link akan aktif setelah proses selesai.';
+  }
+}
+
+function renderActionButtons(data) {
+  const area = document.getElementById('job-action-area');
+  if (!area) return;
+  const buttons = [];
+
+  if (data.status === 'validated') {
+    buttons.push(`<form method="post" action="${actionUrls.start}"><button class="btn btn-primary">Generate</button></form>`);
+  }
+  if (data.pausable) {
+    buttons.push(`<form method="post" action="${actionUrls.pause}"><button class="btn btn-outline-warning" id="pause-job-button">Pause</button></form>`);
+  } else if (data.pause_requested) {
+    buttons.push('<button class="btn btn-outline-warning" type="button" id="pause-job-button" disabled>Pause Diproses...</button>');
+  }
+  if (data.resumable) {
+    buttons.push(`<form method="post" action="${actionUrls.resume}"><button class="btn btn-primary" id="resume-job-button">Lanjutkan Proses</button></form>`);
+  }
+  if (data.status !== 'validated' && data.stoppable && !data.stop_requested) {
+    buttons.push(`<form method="post" action="${actionUrls.stop}"><button class="btn btn-outline-danger" id="stop-job-button">Stop</button></form>`);
+  } else if (data.stop_requested) {
+    buttons.push('<button class="btn btn-outline-danger" type="button" id="stop-job-button" disabled>Stop Diproses...</button>');
+  }
+  buttons.push(`<button class="btn btn-outline-primary ${data.completed ? '' : 'disabled'}" type="button" id="copy-drive-link-button" data-folder-link="${data.folder_link || ''}" ${data.completed ? '' : 'disabled'}>Copy Link Drive</button>`);
+  area.innerHTML = buttons.join('');
+  bindCopyButton();
+}
+
+function fallbackCopyText(text) {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', 'readonly');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  textarea.setSelectionRange(0, text.length);
+  let copied = false;
+  try {
+    copied = document.execCommand('copy');
+  } catch (error) {
+    copied = false;
+  }
+  document.body.removeChild(textarea);
+  return copied;
+}
+
+async function copyDriveLink() {
+  const button = document.getElementById('copy-drive-link-button');
+  if (!button) return;
+  const link = button.dataset.folderLink || '';
+  if (!link) return;
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(link);
+      showCopyFeedback('Link folder Drive berhasil disalin.', true);
+      return;
+    } catch (error) {}
+  }
+  const copied = fallbackCopyText(link);
+  if (copied) {
+    showCopyFeedback('Link folder Drive berhasil disalin.', true);
+  } else {
+    showCopyFeedback('Link tidak bisa disalin otomatis. Silakan salin manual dari browser.', false);
+  }
+}
+
+function bindCopyButton() {
+  const copyButton = document.getElementById('copy-drive-link-button');
+  if (copyButton) {
+    copyButton.addEventListener('click', copyDriveLink);
+  }
+}
+
+function setStartInfo(data) {
+  const startInfo = document.getElementById('job-start-info');
+  if (!startInfo) return;
+  if (data.status === 'paused') {
+    startInfo.textContent = 'Proses sedang dijeda. Silakan lanjutkan proses untuk meneruskan batch dari progres terakhir.';
+    startInfo.className = 'alert alert-warning mb-3';
+  } else if (data.pause_requested) {
+    startInfo.textContent = 'Permintaan pause sudah dicatat. Sistem akan menjeda proses setelah pekerjaan aktif selesai.';
+    startInfo.className = 'alert alert-warning mb-3';
+  } else if (data.stop_requested) {
+    startInfo.textContent = 'Permintaan stop sudah dicatat. Sistem akan menghentikan proses setelah pekerjaan aktif selesai.';
+    startInfo.className = 'alert alert-danger mb-3';
+  } else if (data.status === 'cancelled') {
+    startInfo.textContent = 'Proses generate dihentikan oleh operator.';
+    startInfo.className = 'alert alert-danger mb-3';
+  } else if (data.status === 'completed_with_errors') {
+    startInfo.textContent = 'Proses generate telah selesai dengan beberapa error. Silakan tinjau ringkasan error yang tersedia.';
+    startInfo.className = 'alert alert-warning mb-3';
+  } else if (data.status === 'completed') {
+    startInfo.textContent = 'Proses generate telah selesai. Hasil siap ditinjau pada folder Google Drive.';
+    startInfo.className = 'alert alert-success mb-3';
+  } else if (data.status === 'failed') {
+    startInfo.textContent = 'Proses generate gagal diselesaikan. Silakan tinjau detail error yang tersedia.';
+    startInfo.className = 'alert alert-danger mb-3';
+  } else if (data.status === 'running') {
+    startInfo.textContent = 'Proses generate sedang berjalan. Status akan diperbarui otomatis pada halaman ini.';
+    startInfo.className = 'alert alert-info mb-3';
+  }
+}
+
+async function pollStatus() {
+  const response = await fetch(statusUrl, {headers: {'X-Requested-With': 'XMLHttpRequest'}});
+  const payload = await response.json();
+  if (!payload.ok) return;
+  const data = payload.data;
+  const statusNode = document.getElementById('job-status');
+  statusNode.textContent = data.status_label || statusLabels[data.status] || data.status;
+  statusNode.className = `status-pill status-${data.status}`;
+  document.getElementById('job-total').textContent = data.total_rows;
+  document.getElementById('job-success').textContent = data.success_rows;
+  document.getElementById('job-failed').textContent = data.failed_rows;
+  document.getElementById('job-progress-bar').style.width = `${data.progress_percent}%`;
+  document.getElementById('job-progress-bar').textContent = `${data.progress_percent}%`;
+  const progressTrack = document.getElementById('job-progress-track');
+  if (progressTrack) {
+    progressTrack.classList.toggle('progress-active', data.status === 'running');
+  }
+  document.getElementById('job-progress-text').textContent = `Diproses ${data.processed_rows} dari ${data.total_rows} peserta.`;
+  document.getElementById('job-errors-list').innerHTML = renderErrors(data.latest_errors);
+  document.getElementById('job-error-summary').innerHTML = (data.error_summary && ['completed_with_errors', 'failed', 'paused', 'cancelled'].includes(data.status)) ? `<div class="alert alert-danger mb-0">${data.error_summary}</div>` : '';
+  renderActionButtons(data);
+  setCopyButton(data);
+  setStartInfo(data);
+  if (!finalStates.has(data.status)) {
+    window.setTimeout(pollStatus, 1000);
+  }
+}
+
+bindCopyButton();
+setCopyButton({completed: {{ 'true' if summary.completed else 'false' }}, resumable: {{ 'true' if summary.resumable else 'false' }}, folder_link: {{ (summary.folder_link or '')|tojson }} });
+window.setTimeout(pollStatus, 1000);
+</script>
+{% endblock %}

@@ -1,0 +1,327 @@
+{% extends 'base.html' %}
+{% block title %}Generate Baru | {{ app_name }}{% endblock %}
+{% block content %}
+<section class="hero mb-4">
+  <div class="row align-items-center g-4">
+    <div class="col-lg-8">
+      <div class="eyebrow mb-3">Batch baru</div>
+      <h1 class="display-6 fw-bold mb-3">Generate Sertifikat Baru</h1>
+      <p class="hero-copy mb-0">Siapkan template, data peserta, dan folder tujuan untuk memulai batch generate baru.</p>
+    </div>
+    <div class="col-lg-4 text-lg-end">
+      <a class="btn btn-outline-secondary" href="{{ url_for('certificates.dashboard') }}">Dashboard</a>
+    </div>
+  </div>
+</section>
+
+<div class="card app-workspace-card">
+  <div class="card-body p-4 p-lg-5">
+    <form method="post" enctype="multipart/form-data" id="validate-form" class="app-form-shell">
+      <input type="hidden" name="step" value="{{ current_step or 'validate' }}">
+      {% if staged_template_path %}
+      <input type="hidden" name="staged_template_path" value="{{ staged_template_path }}">
+      {% endif %}
+      {% if staged_workbook_path %}
+      <input type="hidden" name="staged_workbook_path" value="{{ staged_workbook_path }}">
+      {% endif %}
+      {% if original_template_name %}
+      <input type="hidden" name="original_template_name" value="{{ original_template_name }}">
+      {% endif %}
+      {% if original_excel_name %}
+      <input type="hidden" name="original_excel_name" value="{{ original_excel_name }}">
+      {% endif %}
+
+      {% if (current_step or 'validate') == 'mapping' %}
+      <input type="hidden" name="drive_folder_id" value="{{ drive_folder_id or '' }}">
+      <div class="surface-soft app-form-group">
+        <div class="app-group-heading">
+          <div class="section-title mb-1">Data tervalidasi</div>
+          <p class="small-muted mb-0">Dokumen sumber dan folder tujuan sudah tervalidasi. Silakan lanjutkan pemetaan data peserta.</p>
+        </div>
+        <div class="row g-4 validation-summary-grid">
+          <div class="col-lg-4 col-md-6">
+            <div class="validation-summary-card h-100">
+              <div class="validation-summary-label">File PPTX</div>
+              <div class="validation-summary-value">{{ uploaded_template_name or original_template_name or '-' }}</div>
+            </div>
+          </div>
+          <div class="col-lg-4 col-md-6">
+            <div class="validation-summary-card h-100">
+              <div class="validation-summary-label">File Excel</div>
+              <div class="validation-summary-value">{{ uploaded_excel_name or original_excel_name or '-' }}</div>
+            </div>
+          </div>
+          <div class="col-lg-4 col-md-12">
+            <div class="validation-summary-card h-100">
+              <div class="validation-summary-label">Folder ID / Link Google Drive</div>
+              <div class="validation-summary-value validation-summary-mono">{{ drive_validation.folder_id or drive_folder_id or '-' }}</div>
+              {% if drive_validation and drive_validation.input_value %}
+              <div class="validation-summary-note mt-2">Input: {{ drive_validation.input_value }}</div>
+              {% endif %}
+            </div>
+          </div>
+          <div class="col-lg-12">
+            <div class="validation-summary-card h-100 validation-summary-status-card validation-{{ drive_validation.status if drive_validation else 'pending' }}">
+              <div class="validation-summary-label">Status Validasi Google Drive</div>
+              <div class="validation-summary-value">{{ drive_validation.label if drive_validation else 'Belum dicek' }}</div>
+              <div class="validation-summary-note mt-2">{{ drive_validation.message if drive_validation else 'Validasi folder tujuan akan ditampilkan setelah proses cek dijalankan.' }}</div>
+              {% if drive_validation and drive_validation.folder_name %}
+              <div class="validation-summary-note mt-2">Folder terdeteksi: {{ drive_validation.folder_name }}</div>
+              {% endif %}
+            </div>
+          </div>
+          {% if excel_format_hint %}
+          <div class="col-xl-8 col-lg-9">
+            <div class="validation-summary-card validation-summary-status-card validation-{{ 'valid' if excel_format_hint.status == 'match' else 'pending' }} excel-format-hint-card">
+              <div class="validation-summary-label">Pemeriksaan format Excel</div>
+              <div class="validation-summary-value">{{ excel_format_hint.title }}</div>
+              <div class="validation-summary-note mt-2">{{ excel_format_hint.message }}</div>
+              {% if excel_format_hint.missing_headers %}
+              <div class="validation-summary-note mt-2">Header standar yang belum terdeteksi: {{ excel_format_hint.missing_headers|join(', ') }}</div>
+              {% endif %}
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="divider-soft"></div>
+      {% if sample_conversion_preview %}
+      <div class="surface-soft app-form-group">
+        <div class="app-group-heading">
+          <div class="section-title mb-1">Preview Sertifikat</div>
+        </div>
+        {% if sample_conversion_preview.available %}
+        <div class="row g-4 align-items-stretch">
+          <div class="col-lg-12">
+            <div class="validation-summary-card h-100 preview-image-card">
+              <div class="validation-summary-label">Contoh Sertifikat peserta: {{ sample_conversion_preview.participant_name }}{% if sample_conversion_preview.institution_name %} | {{ sample_conversion_preview.institution_name }}{% endif %}</div>
+              <div class="generated-preview-frame">
+                <img src="{{ url_for('certificates.staging_preview', job_uuid=sample_conversion_preview.job_uuid, filename=sample_conversion_preview.image_name) }}" alt="Preview hasil konversi contoh sertifikat" class="generated-preview-image">
+              </div>
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <div class="validation-summary-card validation-summary-status-card validation-pending">
+          <div class="validation-summary-label">Preview Sertifikat</div>
+          <div class="validation-summary-value">Preview belum tersedia</div>
+          <div class="validation-summary-note mt-2">{{ sample_conversion_preview.message }}</div>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+      <div class="surface-soft app-form-group">
+        <div class="mb-3">
+          <div class="eyebrow mb-2">Konfigurasi peserta</div>
+          <h2 class="h3 fw-bold mb-1">Pemetaan data untuk placeholder sertifikat</h2>
+          <p class="small-muted mb-0">Pilih sheet dan kolom yang akan dihubungkan dengan placeholder pada template sertifikat.</p>
+        </div>
+        <div class="row g-4">
+          <div class="col-md-4">
+            <label class="form-label">Sheet Excel</label>
+            <select class="form-select" name="sheet_name" required>
+              {% if sheet_names %}
+                {% for sheet in sheet_names %}
+                <option value="{{ sheet }}" {% if sheet == selected_sheet %}selected{% endif %}>{{ sheet }}</option>
+                {% endfor %}
+              {% else %}
+                <option value="">Gunakan sheet pertama</option>
+              {% endif %}
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Kolom Nama → {{ '{{nama}}' }}</label>
+            <select class="form-select" name="name_column" required>
+              <option value="">Pilih kolom nama</option>
+              {% for header in workbook_headers or [] %}
+              <option value="{{ header }}" {% if (selected_name_column or request.form.get('name_column')) == header %}selected{% endif %}>{{ header }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Kolom Instansi → {{ '{{instansi}}' }}</label>
+            <select class="form-select" name="institution_column" required>
+              <option value="">Pilih kolom instansi</option>
+              {% for header in workbook_headers or [] %}
+              <option value="{{ header }}" {% if (selected_institution_column or request.form.get('institution_column')) == header %}selected{% endif %}>{{ header }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+      </div>
+      {% else %}
+      <div class="surface-soft app-form-group">
+        <div class="app-group-heading">
+          <div class="section-title mb-1">Dokumen dan folder tujuan</div>
+          <p class="small-muted mb-0">Unggah sumber batch dan tentukan folder Google Drive tujuan sebelum lanjut ke proses pemetaan.</p>
+        </div>
+        {% if staged_template_path and staged_workbook_path and original_template_name and original_excel_name %}
+        <div class="row g-4 validation-summary-grid mb-2">
+          <div class="col-lg-6">
+            <div class="validation-summary-card h-100">
+              <div class="validation-summary-label">File PPTX tersimpan</div>
+              <div class="validation-summary-value">{{ original_template_name }}</div>
+              <div class="validation-summary-note mt-2">Template sudah tersimpan pada staging. Bapak cukup perbaiki Folder ID / Link Google Drive tanpa upload ulang file.</div>
+            </div>
+          </div>
+          <div class="col-lg-6">
+            <div class="validation-summary-card h-100">
+              <div class="validation-summary-label">File Excel tersimpan</div>
+              <div class="validation-summary-value">{{ original_excel_name }}</div>
+              <div class="validation-summary-note mt-2">Data peserta tetap dipakai dari file yang sudah diunggah sebelumnya.</div>
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <div class="row g-4">
+          <div class="col-lg-6">
+            <label class="form-label">Template Sertifikat (.pptx)</label>
+            <input class="form-control" type="file" name="template_file" accept=".pptx" required>
+          </div>
+          <div class="col-lg-6">
+            <label class="form-label">Excel Peserta (.xlsx)</label>
+            <input class="form-control" type="file" name="excel_file" accept=".xlsx" required>
+          </div>
+        </div>
+        {% endif %}
+        <div class="row g-4 mt-1">
+          <div class="col-lg-7">
+            <label class="form-label">Folder ID / Link Google Drive</label>
+            <input class="form-control" id="drive-folder-input" type="text" name="drive_folder_id" value="{{ drive_folder_id or '' }}" placeholder="Contoh ID: 1abcDEF... atau link folder Google Drive" required>
+            <div class="small-muted mt-2">Sistem menerima Folder ID atau link folder Google Drive, lalu akan memvalidasi apakah folder tujuan benar-benar tersedia.</div>
+            <div id="drive-live-preview" class="drive-live-preview d-none" aria-live="polite">
+              <div class="drive-live-preview-label">ID Google Drive terdeteksi</div>
+              <div id="drive-live-preview-value" class="drive-live-preview-value"></div>
+              <div id="drive-live-preview-note" class="drive-live-preview-note"></div>
+            </div>
+          </div>
+        </div>
+        {% if drive_validation %}
+        <div class="row g-4 mt-1">
+          <div class="col-12">
+            <div class="validation-summary-card validation-summary-status-card validation-{{ drive_validation.status }}">
+              <div class="validation-summary-label">Ringkasan Validasi Google Drive</div>
+              <div class="validation-summary-value">{{ drive_validation.label }}</div>
+              <div class="validation-summary-note mt-2">{{ drive_validation.message }}</div>
+              {% if drive_validation.input_value %}
+              <div class="validation-summary-note mt-2">Input: {{ drive_validation.input_value }}</div>
+              {% endif %}
+              {% if drive_validation.folder_id %}
+              <div class="validation-summary-note mt-2">Folder ID terbaca: {{ drive_validation.folder_id }}</div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <div id="validation-progress" class="alert alert-primary mt-4 mb-0 d-none" role="status">
+        <div class="d-flex align-items-center gap-3">
+          <div class="spinner-border spinner-border-sm" aria-hidden="true"></div>
+          <div>
+            <div class="fw-semibold" id="loading-title">Validasi sedang diproses...</div>
+            <div class="small" id="loading-desc">Mohon tunggu. Sistem sedang membaca Excel dan memeriksa folder Google Drive.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-4 d-flex gap-3 flex-wrap app-form-actions">
+        {% if (current_step or 'validate') == 'mapping' %}
+        <button class="btn btn-primary" type="submit" id="validate-submit-button">
+          <span class="default-label">Lanjut Buat Job</span>
+          <span class="loading-label d-none"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Menyimpan job...</span>
+        </button>
+        {% else %}
+        <button class="btn btn-primary" type="submit" id="validate-submit-button">
+          <span class="default-label">Validasi</span>
+          <span class="loading-label d-none"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Memvalidasi...</span>
+        </button>
+        {% endif %}
+        <a class="btn btn-outline-secondary" href="{{ url_for('certificates.dashboard') }}">Batal</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_script %}
+<script>
+  (function () {
+    const form = document.getElementById('validate-form');
+    const submitButton = document.getElementById('validate-submit-button');
+    const progressBox = document.getElementById('validation-progress');
+    const loadingTitle = document.getElementById('loading-title');
+    const loadingDesc = document.getElementById('loading-desc');
+    const currentStep = {{ (current_step or 'validate')|tojson }};
+    const driveInput = document.getElementById('drive-folder-input');
+    const drivePreview = document.getElementById('drive-live-preview');
+    const drivePreviewValue = document.getElementById('drive-live-preview-value');
+    const drivePreviewNote = document.getElementById('drive-live-preview-note');
+
+    const normalizeDriveFolderInput = function (value) {
+      const raw = (value || '').trim();
+      if (!raw) {
+        return { normalized: '', source: '' };
+      }
+      if (!raw.includes('drive.google.com')) {
+        return { normalized: raw, source: 'id' };
+      }
+      const folderMatch = raw.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+      if (folderMatch) {
+        return { normalized: folderMatch[1], source: 'link' };
+      }
+      const idMatch = raw.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+      if (idMatch) {
+        return { normalized: idMatch[1], source: 'link' };
+      }
+      return { normalized: '', source: 'invalid' };
+    };
+
+    const updateDrivePreview = function () {
+      if (!driveInput || !drivePreview || !drivePreviewValue || !drivePreviewNote) {
+        return;
+      }
+      const parsed = normalizeDriveFolderInput(driveInput.value);
+      if (!parsed.normalized) {
+        drivePreview.classList.add('d-none');
+        drivePreviewValue.textContent = '';
+        drivePreviewNote.textContent = '';
+        return;
+      }
+      drivePreview.classList.remove('d-none');
+      drivePreviewValue.textContent = parsed.normalized;
+      drivePreviewNote.textContent = parsed.source === 'link'
+        ? 'ID ini diekstrak otomatis dari link share Google Drive dan akan dipakai saat validasi.'
+        : 'Input sudah terbaca sebagai Folder ID dan siap dipakai saat validasi.';
+    };
+
+    if (driveInput) {
+      driveInput.addEventListener('input', updateDrivePreview);
+      driveInput.addEventListener('blur', updateDrivePreview);
+      updateDrivePreview();
+    }
+
+    if (!form || !submitButton || !progressBox) return;
+
+    form.addEventListener('submit', function () {
+      submitButton.disabled = true;
+      const defaultLabel = submitButton.querySelector('.default-label');
+      const loadingLabel = submitButton.querySelector('.loading-label');
+      if (defaultLabel) defaultLabel.classList.add('d-none');
+      if (loadingLabel) loadingLabel.classList.remove('d-none');
+      if (loadingTitle && loadingDesc) {
+        if (currentStep === 'mapping') {
+          loadingTitle.textContent = 'Menyimpan konfigurasi job...';
+          loadingDesc.textContent = 'Mohon tunggu. Sistem sedang menyimpan pilihan sheet dan kolom untuk menyiapkan job generate.';
+        } else {
+          loadingTitle.textContent = 'Validasi sedang diproses...';
+          loadingDesc.textContent = 'Mohon tunggu. Sistem sedang membaca Excel dan memeriksa folder Google Drive.';
+        }
+      }
+      progressBox.classList.remove('d-none');
+    });
+  })();
+</script>
+{% endblock %}
