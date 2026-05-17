@@ -6,4 +6,11 @@ cd "$APP_DIR"
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
-echo "Incident Portal installed. Copy .env manually and review deploy/systemd/incident-portal.service"
+cat <<'EOF'
+Incident Portal selesai diinstall pada level dependency.
+Langkah manual berikutnya:
+1. Copy .env.example menjadi .env lalu sesuaikan
+2. Siapkan admin awal dan DATABASE_URL
+3. Siapkan INCIDENT_DATABASE_URL untuk integrasi backend
+4. Review deploy/systemd/incident-portal.service
+EOF

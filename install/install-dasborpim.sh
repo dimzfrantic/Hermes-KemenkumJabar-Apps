@@ -6,4 +6,11 @@ cd "$APP_DIR"
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
-echo "Dasborpim installed. Copy .env manually and review deploy/systemd/dasborpim.service"
+cat <<'EOF'
+Dasborpim selesai diinstall pada level dependency.
+Langkah manual berikutnya:
+1. Buat/copy .env final
+2. Siapkan PostgreSQL dan DATABASE_URL
+3. Review deploy/systemd/dasborpim.service
+4. Review deploy/nginx/dasborpim.nginx.conf bila memakai reverse proxy
+EOF

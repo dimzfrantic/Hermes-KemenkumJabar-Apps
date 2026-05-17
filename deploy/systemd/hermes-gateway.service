@@ -1,11 +1,12 @@
 [Unit]
-Description=Hermes Gateway
+Description=Hermes Gateway Telegram
 After=network.target
 
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/hermes gateway run
 Restart=always
+RestartSec=5
 
 [Install]
 WantedBy=default.target
