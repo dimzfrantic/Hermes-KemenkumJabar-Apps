@@ -16,7 +16,7 @@ from pptx import Presentation
 
 from extensions import db
 from models import AutoCertificateEvent, AutoCertificateItem, AutoCertificateRun, GenerationJob, JobRowResult
-from services.auto_certificate import AutoCertificateError, detect_form_columns, retry_failed_items, sync_event, validate_event_configuration
+from services.auto_certificate import AutoCertificateError, detect_form_columns, reset_processing_items, retry_failed_items, sync_event, validate_event_configuration
 from services.excel_parser import WorkbookValidationError, load_participants
 from services.google_drive import DriveConfigurationError, get_folder_metadata, probe_folder_upload_with_config
 from services.google_sheets import SheetConfigurationError, fetch_form_rows, normalize_spreadsheet_input
@@ -817,6 +817,15 @@ def auto_event_retry(event_uuid: str):
     event = AutoCertificateEvent.query.filter_by(event_uuid=event_uuid).first_or_404()
     count = retry_failed_items(event.id)
     flash(f'{count} peserta gagal dikembalikan ke antrean pending.', 'success')
+    return redirect(url_for('certificates.auto_event_detail', event_uuid=event.event_uuid))
+
+
+@certificates_bp.route('/automation/<event_uuid>/reset-processing', methods=['POST'])
+@login_required
+def auto_event_reset_processing(event_uuid: str):
+    event = AutoCertificateEvent.query.filter_by(event_uuid=event_uuid).first_or_404()
+    count = reset_processing_items(event.id)
+    flash(f'{count} peserta macet dikembalikan ke antrean pending.', 'success')
     return redirect(url_for('certificates.auto_event_detail', event_uuid=event.event_uuid))
 
 

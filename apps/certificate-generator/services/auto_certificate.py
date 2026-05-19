@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import fcntl
+import os
 import shutil
 import threading
 from dataclasses import dataclass
@@ -10,6 +12,7 @@ from uuid import uuid4
 from flask import current_app
 from google.auth.exceptions import RefreshError, TransportError
 from googleapiclient.errors import HttpError
+from sqlalchemy.exc import OperationalError
 
 from extensions import db
 from models import AutoCertificateEvent, AutoCertificateItem, AutoCertificateRun
@@ -19,6 +22,8 @@ from services.pptx_generator import build_pdf_safe_template, convert_pptx_to_pdf
 from services.storage import ensure_dir, remove_dir, remove_files, slugify_filename
 
 _SYNC_LOCKS: dict[str, threading.Lock] = {}
+RETRYABLE_SYNC_EXCEPTIONS = (TransportError,)
+_DB_SYNC_LOCK_PATH = Path(__file__).resolve().parent.parent / 'instance' / 'auto_certificate_sync.lock'
 
 
 class AutoCertificateError(RuntimeError):
@@ -45,6 +50,38 @@ def _event_lock(event_uuid: str) -> threading.Lock:
     if event_uuid not in _SYNC_LOCKS:
         _SYNC_LOCKS[event_uuid] = threading.Lock()
     return _SYNC_LOCKS[event_uuid]
+
+
+class _GlobalSyncFileLock:
+    def __init__(self, path: Path):
+        self.path = path
+        self.handle = None
+
+    def __enter__(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.handle = open(self.path, 'a+')
+        try:
+            fcntl.flock(self.handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            self.handle.close()
+            self.handle = None
+            raise AutoCertificateError('Sinkronisasi global sedang berjalan. Silakan tunggu proses aktif selesai.') from exc
+        self.handle.seek(0)
+        self.handle.truncate()
+        self.handle.write(str(os.getpid()))
+        self.handle.flush()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if self.handle is None:
+            return
+        try:
+            self.handle.seek(0)
+            self.handle.truncate()
+            fcntl.flock(self.handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            self.handle.close()
+            self.handle = None
 
 
 def _normalize_header_key(value: str) -> str:
@@ -114,6 +151,55 @@ def _recalculate_event_counters(event: AutoCertificateEvent):
     event.failed_responses = sum(1 for item in items if item.status == 'failed')
 
 
+def _processing_timeout_minutes(event: AutoCertificateEvent) -> int:
+    interval = max(int(event.polling_interval_minutes or 5), 1)
+    return max(interval * 2, 10)
+
+
+def _recover_stuck_processing_items(event: AutoCertificateEvent) -> int:
+    cutoff = datetime.utcnow() - timedelta(minutes=_processing_timeout_minutes(event))
+    stuck_items = (
+        AutoCertificateItem.query
+        .filter_by(event_id=event.id, status='processing')
+        .filter(AutoCertificateItem.processed_at.is_(None))
+        .filter(AutoCertificateItem.drive_file_id.is_(None))
+        .filter(AutoCertificateItem.updated_at <= cutoff)
+        .all()
+    )
+    recovered = 0
+    for item in stuck_items:
+        item.status = 'pending'
+        item.error_message = 'Antrean dipulihkan otomatis setelah proses sebelumnya terputus.'
+        item.processed_at = None
+        recovered += 1
+    if recovered:
+        _recalculate_event_counters(event)
+        db.session.commit()
+    return recovered
+
+
+def _mark_item_for_retry(item: AutoCertificateItem, message: str | None = None):
+    item.status = 'pending'
+    item.error_message = message or 'Akan dicoba ulang otomatis pada sinkronisasi berikutnya.'
+    item.processed_at = None
+    item.output_filename = None
+    item.drive_file_id = None
+    item.drive_link = None
+
+
+def _retryable_http_error(exc: HttpError) -> bool:
+    status_code = getattr(getattr(exc, 'resp', None), 'status', None)
+    return status_code in {408, 409, 425, 429, 500, 502, 503, 504}
+
+
+def _is_retryable_generation_error(exc: Exception) -> bool:
+    if isinstance(exc, RETRYABLE_SYNC_EXCEPTIONS):
+        return True
+    if isinstance(exc, HttpError):
+        return _retryable_http_error(exc)
+    return False
+
+
 def _prepare_event_template(event: AutoCertificateEvent) -> Path:
     event_root = ensure_dir(Path(current_app.config['AUTO_EVENT_DIR']) / event.event_uuid)
     template_original = event_root / 'template-original.pptx'
@@ -173,89 +259,117 @@ def sync_event(event_id: int) -> EventSyncSummary:
     lock = _event_lock(event.event_uuid)
     if not lock.acquire(blocking=False):
         raise AutoCertificateError('Sinkronisasi kegiatan sedang berjalan. Silakan tunggu proses yang aktif selesai.')
+    run = None
     try:
-        event.last_run_started_at = datetime.utcnow()
-        event.status = 'active' if event.enabled else event.status
-        run = AutoCertificateRun(event_id=event.id, status='running')
-        db.session.add(run)
-        db.session.commit()
+        with _GlobalSyncFileLock(_DB_SYNC_LOCK_PATH):
+            event = db.session.get(AutoCertificateEvent, event_id)
+            if event is None:
+                raise AutoCertificateError('Kegiatan automation tidak ditemukan.')
 
-        parsed = fetch_form_rows(event.spreadsheet_id, worksheet_name=event.worksheet_name)
-        event.spreadsheet_title = parsed.spreadsheet_title
-        event.worksheet_name = parsed.selected_sheet
-        run.found_rows = len(parsed.rows)
+            stale_runs = AutoCertificateRun.query.filter_by(event_id=event.id, status='running').all()
+            for stale_run in stale_runs:
+                stale_run.finished_at = datetime.utcnow()
+                stale_run.status = 'aborted'
+                stale_run.message = 'Run sebelumnya ditutup otomatis karena ada proses sinkronisasi baru yang mengambil alih.'
+            if stale_runs:
+                db.session.commit()
 
-        existing = {item.participant_key: item for item in AutoCertificateItem.query.filter_by(event_id=event.id).all()}
-        queued_rows = 0
-        for row in parsed.rows:
-            key = _participant_key(event, row)
-            if key in existing:
-                continue
-            item = AutoCertificateItem(
-                event_id=event.id,
-                participant_key=key,
-                source_row_number=row.get('_row_number', 0),
-                submitted_at=(row.get(event.timestamp_column or '') or '').strip() or None,
-                participant_name=(row.get(event.name_column or '') or '').strip() or None,
-                institution_name=(row.get(event.institution_column or '') or '').strip() or None,
-                email=(row.get(event.email_column or '') or '').strip() or None,
-                phone=(row.get(event.phone_column or '') or '').strip() or None,
-                status='pending',
-            )
-            db.session.add(item)
-            queued_rows += 1
-        db.session.commit()
-        run.queued_rows = queued_rows
-
-        event_root = ensure_dir(Path(current_app.config['AUTO_EVENT_DIR']) / event.event_uuid)
-        template_safe_path = _prepare_event_template(event)
-
-        pending_items = AutoCertificateItem.query.filter_by(event_id=event.id, status='pending').order_by(AutoCertificateItem.id.asc()).all()
-        for item in pending_items:
-            item.status = 'processing'
-        db.session.commit()
-
-        success_rows = 0
-        failed_rows = 0
-        for item in pending_items:
-            try:
-                result = _generate_item_certificate(event, item, str(template_safe_path))
-                item.status = 'success'
-                item.output_filename = result.get('filename')
-                item.drive_file_id = result.get('drive_file_id')
-                item.drive_link = result.get('drive_link')
-                item.error_message = None
-                item.processed_at = datetime.utcnow()
-                success_rows += 1
-            except Exception as exc:
-                item.status = 'failed'
-                item.error_message = str(exc)
-                item.processed_at = datetime.utcnow()
-                failed_rows += 1
+            event.last_run_started_at = datetime.utcnow()
+            event.status = 'active' if event.enabled else event.status
+            run = AutoCertificateRun(event_id=event.id, status='running')
+            db.session.add(run)
             db.session.commit()
 
-        _recalculate_event_counters(event)
-        event.last_synced_at = datetime.utcnow()
-        event.last_run_finished_at = datetime.utcnow()
-        event.next_run_at = datetime.utcnow() + timedelta(minutes=event.polling_interval_minutes or 5)
-        event.last_error = None
-        event.status = 'active' if event.enabled else 'inactive'
+            recovered_rows = _recover_stuck_processing_items(event)
 
-        run.finished_at = datetime.utcnow()
-        run.status = 'completed' if failed_rows == 0 else 'completed_with_errors'
-        run.processed_rows = len(pending_items)
-        run.success_rows = success_rows
-        run.failed_rows = failed_rows
-        run.message = f'Sinkron selesai. Baru: {queued_rows}, sukses: {success_rows}, gagal: {failed_rows}.'
-        db.session.commit()
-        return EventSyncSummary(
-            found_rows=len(parsed.rows),
-            queued_rows=queued_rows,
-            processed_rows=len(pending_items),
-            success_rows=success_rows,
-            failed_rows=failed_rows,
-            message=run.message,
-        )
+            parsed = fetch_form_rows(event.spreadsheet_id, worksheet_name=event.worksheet_name)
+            event.spreadsheet_title = parsed.spreadsheet_title
+            event.worksheet_name = parsed.selected_sheet
+            run.found_rows = len(parsed.rows)
+
+            existing = {item.participant_key: item for item in AutoCertificateItem.query.filter_by(event_id=event.id).all()}
+            queued_rows = 0
+            for row in parsed.rows:
+                key = _participant_key(event, row)
+                if key in existing:
+                    continue
+                item = AutoCertificateItem(
+                    event_id=event.id,
+                    participant_key=key,
+                    source_row_number=row.get('_row_number', 0),
+                    submitted_at=(row.get(event.timestamp_column or '') or '').strip() or None,
+                    participant_name=(row.get(event.name_column or '') or '').strip() or None,
+                    institution_name=(row.get(event.institution_column or '') or '').strip() or None,
+                    email=(row.get(event.email_column or '') or '').strip() or None,
+                    phone=(row.get(event.phone_column or '') or '').strip() or None,
+                    status='pending',
+                )
+                db.session.add(item)
+                queued_rows += 1
+            db.session.commit()
+            run.queued_rows = queued_rows
+
+            event_root = ensure_dir(Path(current_app.config['AUTO_EVENT_DIR']) / event.event_uuid)
+            template_safe_path = _prepare_event_template(event)
+
+            pending_items = AutoCertificateItem.query.filter_by(event_id=event.id, status='pending').order_by(AutoCertificateItem.id.asc()).all()
+
+            success_rows = 0
+            failed_rows = 0
+            for item in pending_items:
+                try:
+                    item.status = 'processing'
+                    item.error_message = None
+                    item.processed_at = None
+                    db.session.commit()
+
+                    result = _generate_item_certificate(event, item, str(template_safe_path))
+                    item.status = 'success'
+                    item.output_filename = result.get('filename')
+                    item.drive_file_id = result.get('drive_file_id')
+                    item.drive_link = result.get('drive_link')
+                    item.error_message = None
+                    item.processed_at = datetime.utcnow()
+                    success_rows += 1
+                except Exception as exc:
+                    if _is_retryable_generation_error(exc):
+                        _mark_item_for_retry(item, 'Koneksi internet/Google sempat terputus. Peserta dikembalikan ke antrean untuk dicoba ulang otomatis.')
+                        db.session.commit()
+                        raise AutoCertificateError('Koneksi internet/Google terputus di tengah proses. Sisa antrean akan dicoba ulang otomatis pada sinkronisasi berikutnya.') from exc
+                    item.status = 'failed'
+                    item.error_message = str(exc)
+                    item.processed_at = datetime.utcnow()
+                    failed_rows += 1
+                db.session.commit()
+
+            _recalculate_event_counters(event)
+            event.last_synced_at = datetime.utcnow()
+            event.last_run_finished_at = datetime.utcnow()
+            event.next_run_at = datetime.utcnow() + timedelta(minutes=event.polling_interval_minutes or 5)
+            event.last_error = None
+            event.status = 'active' if event.enabled else 'inactive'
+
+            run.finished_at = datetime.utcnow()
+            run.status = 'completed' if failed_rows == 0 else 'completed_with_errors'
+            run.processed_rows = len(pending_items)
+            run.success_rows = success_rows
+            run.failed_rows = failed_rows
+            recovery_note = f', dipulihkan: {recovered_rows}' if recovered_rows else ''
+            run.message = f'Sinkron selesai. Baru: {queued_rows}, sukses: {success_rows}, gagal: {failed_rows}{recovery_note}.'
+            db.session.commit()
+            return EventSyncSummary(
+                found_rows=len(parsed.rows),
+                queued_rows=queued_rows,
+                processed_rows=len(pending_items),
+                success_rows=success_rows,
+                failed_rows=failed_rows,
+                message=run.message,
+            )
+    except OperationalError as exc:
+        db.session.rollback()
+        if 'database is locked' in str(exc).lower():
+            raise AutoCertificateError('Database sedang dipakai proses sinkronisasi lain. Silakan tunggu sebentar lalu coba lagi.') from exc
+        raise AutoCertificateError(str(exc)) from exc
     except (SheetConfigurationError, DriveConfigurationError, RefreshError, HttpError, AutoCertificateError, RuntimeError, TransportError) as exc:
         db.session.rollback()
         event = db.session.get(AutoCertificateEvent, event_id)
@@ -268,7 +382,8 @@ def sync_event(event_id: int) -> EventSyncSummary:
             event.last_run_finished_at = datetime.utcnow()
             event.next_run_at = datetime.utcnow() + timedelta(minutes=event.polling_interval_minutes or 5)
             _recalculate_event_counters(event)
-        run = AutoCertificateRun.query.filter_by(event_id=event_id).order_by(AutoCertificateRun.id.desc()).first()
+        if run is None:
+            run = AutoCertificateRun.query.filter_by(event_id=event_id).order_by(AutoCertificateRun.id.desc()).first()
         if run and run.status == 'running':
             run.finished_at = datetime.utcnow()
             run.status = 'failed'
@@ -289,6 +404,29 @@ def retry_failed_items(event_id: int) -> int:
         item.status = 'pending'
         item.error_message = None
         item.processed_at = None
+        count += 1
+    _recalculate_event_counters(event)
+    db.session.commit()
+    return count
+
+
+def reset_processing_items(event_id: int, *, only_stale: bool = False) -> int:
+    event = db.session.get(AutoCertificateEvent, event_id)
+    if event is None:
+        raise AutoCertificateError('Kegiatan automation tidak ditemukan.')
+    query = AutoCertificateItem.query.filter_by(event_id=event.id, status='processing')
+    if only_stale:
+        cutoff = datetime.utcnow() - timedelta(minutes=_processing_timeout_minutes(event))
+        query = (
+            query
+            .filter(AutoCertificateItem.processed_at.is_(None))
+            .filter(AutoCertificateItem.drive_file_id.is_(None))
+            .filter(AutoCertificateItem.updated_at <= cutoff)
+        )
+    items = query.all()
+    count = 0
+    for item in items:
+        _mark_item_for_retry(item, 'Antrean direset manual untuk diproses ulang.')
         count += 1
     _recalculate_event_counters(event)
     db.session.commit()
