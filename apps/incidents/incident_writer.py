@@ -948,11 +948,17 @@ def format_minutes(total_minutes):
     """Format minutes into compact human text."""
     if total_minutes is None:
         return '-'
-    hours = total_minutes // 60
-    minutes = total_minutes % 60
-    if hours > 0:
-        return str(hours) + 'h ' + str(minutes) + 'm'
-    return str(minutes) + 'm'
+    total_minutes = max(int(total_minutes), 0)
+    days, rem = divmod(total_minutes, 1440)
+    hours, minutes = divmod(rem, 60)
+    parts = []
+    if days:
+        parts.append(str(days) + 'd')
+    if hours:
+        parts.append(str(hours) + 'h')
+    if minutes or not parts:
+        parts.append(str(minutes) + 'm')
+    return ' '.join(parts)
 
 
 def age_minutes_from_created(created_at, now=None):
@@ -1342,22 +1348,15 @@ def cmd_update(args):
 
     existing_durasi = current_record.get('durasi', '')
     durasi = existing_durasi
-    should_calculate_duration = (
-        new_status in TERMINAL_STATUSES
-        and old_status not in TERMINAL_STATUSES
-        and not existing_durasi
-    )
-    if should_calculate_duration:
+    if new_status in TERMINAL_STATUSES:
         created = current_record.get('created_at', '')
         if created:
             try:
                 start = datetime.strptime(created, '%d-%m-%Y %H:%M:%S')
                 end = datetime.strptime(now, '%d-%m-%Y %H:%M:%S')
                 diff = end - start
-                minutes = int(diff.total_seconds() / 60)
-                hours = minutes // 60
-                mins = minutes % 60
-                durasi = str(hours) + 'h ' + str(mins) + 'm' if hours > 0 else str(mins) + 'm'
+                minutes = max(0, int(diff.total_seconds() / 60))
+                durasi = format_minutes(minutes)
             except:
                 durasi = existing_durasi or 'N/A'
 
