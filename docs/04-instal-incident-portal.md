@@ -61,9 +61,7 @@ Variabel penting
 - ADMIN_NAME
 - ADMIN_PASSWORD
 - INCIDENT_DATABASE_URL
-- SIGNAL_ACCOUNT (opsional)
-- SIGNAL_GROUP_ID (opsional)
-- TELEGRAM_BOT_TOKEN (opsional sesuai fitur)
+- TELEGRAM_BOT_TOKEN (opsional sesuai fitur notifikasi)
 - TELEGRAM_GROUP_ID (opsional)
 - TELEGRAM_TOPIC_INSIDEN_ID (opsional)
 

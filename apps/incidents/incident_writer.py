@@ -736,8 +736,8 @@ def cmd_write(args):
         summary = args.summary if hasattr(args, 'summary') else args.message
         reporter = args.reporter if hasattr(args, 'reporter') else 'Unknown'
     
-    # Only override with Signal sender if reporter could not be extracted (reporter is 'Unknown')
-    sender_from_env = os.environ.get('HERMES_SIGNAL_SENDER', '')
+    # Only override with chat sender identity if reporter could not be extracted (reporter is 'Unknown')
+    sender_from_env = os.environ.get('HERMES_CHAT_SENDER', '') or os.environ.get('HERMES_SIGNAL_SENDER', '')
     sender_from_arg = getattr(args, 'sender', '') or ''
     effective_sender = sender_from_arg or sender_from_env
     if reporter == 'Unknown' and effective_sender:
@@ -1639,7 +1639,7 @@ def main():
     
     write_parser = subparsers.add_parser('write', help='Create new incident')
     write_parser.add_argument('--reporter', help='Nama pelapor')
-    write_parser.add_argument('--sender', help='Nomor Signal pengirim')
+    write_parser.add_argument('--sender', help='Identitas pengirim chat untuk fallback pelapor')
     write_parser.add_argument('--location', help='Lokasi masalah')
     write_parser.add_argument('--summary', help='Ringkasan masalah')
     write_parser.add_argument('--message', help='Full message to parse')

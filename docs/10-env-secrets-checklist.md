@@ -58,8 +58,6 @@ Siapkan manual:
 - ADMIN_NAME
 - ADMIN_PASSWORD
 - INCIDENT_DATABASE_URL
-- SIGNAL_ACCOUNT bila dipakai
-- SIGNAL_GROUP_ID bila dipakai
 - TELEGRAM_BOT_TOKEN bila notifikasi dipakai
 - TELEGRAM_GROUP_ID bila dipakai
 - TELEGRAM_TOPIC_INSIDEN_ID bila dipakai
