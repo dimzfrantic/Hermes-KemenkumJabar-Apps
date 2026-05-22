@@ -52,8 +52,8 @@ class PortalTicket(db.Model):
     handled_by_cache = db.Column(db.String(255), nullable=True)
     last_update_cache = db.Column(db.String(64), nullable=True)
     raw_create_response = db.Column(db.Text, nullable=True)
-    notification_ok = db.Column('signal_notification_ok', db.Boolean, default=False, nullable=False)
-    notification_detail = db.Column('signal_notification_detail', db.Text, nullable=True)
+    notification_ok = db.Column(db.Boolean, default=False, nullable=False)
+    notification_detail = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
