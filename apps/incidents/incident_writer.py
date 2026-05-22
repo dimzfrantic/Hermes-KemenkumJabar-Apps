@@ -737,7 +737,7 @@ def cmd_write(args):
         reporter = args.reporter if hasattr(args, 'reporter') else 'Unknown'
     
     # Only override with chat sender identity if reporter could not be extracted (reporter is 'Unknown')
-    sender_from_env = os.environ.get('HERMES_CHAT_SENDER', '') or os.environ.get('HERMES_SIGNAL_SENDER', '')
+    sender_from_env = os.environ.get('HERMES_CHAT_SENDER', '')
     sender_from_arg = getattr(args, 'sender', '') or ''
     effective_sender = sender_from_arg or sender_from_env
     if reporter == 'Unknown' and effective_sender:
