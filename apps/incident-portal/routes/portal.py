@@ -16,7 +16,7 @@ from services.incident_gateway import (
     sync_portal_ticket,
     sync_portal_tickets,
 )
-from services.signal_notifier import send_new_ticket_notification
+from services.telegram_notifier import send_new_ticket_notification
 
 portal_bp = Blueprint('portal', __name__)
 
@@ -103,12 +103,12 @@ def new_ticket():
         db.session.add(ticket)
         db.session.flush()
         ok, detail_text = send_new_ticket_notification(ticket)
-        ticket.signal_notification_ok = ok
-        ticket.signal_notification_detail = detail_text
+        ticket.notification_ok = ok
+        ticket.notification_detail = detail_text
         db.session.commit()
         flash(f"Tiket berhasil dibuat: {ticket.ticket_alias} / {ticket.ticket_code}", 'success')
         if not ok:
-            flash(f'Notifikasi Signal belum terkirim: {detail_text}', 'warning')
+            flash(f'Notifikasi Telegram belum terkirim: {detail_text}', 'warning')
         return redirect(url_for('portal.ticket_detail', ticket_id=ticket.id, skip_sync=1))
 
     return render_template('new_ticket.html', categories=categories)

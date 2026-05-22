@@ -1,9 +1,8 @@
 import json
 import re
-import subprocess
 from urllib import error, parse, request
-from flask import current_app
 
+from flask import current_app
 
 
 def _extract_link_from_response(label, response_text):
@@ -38,48 +37,6 @@ def _build_message(ticket, incident_record=None):
     if folder_bukti:
         lines.append(f'Folder bukti: {folder_bukti}')
     return '\n'.join(lines)
-
-
-def _send_via_signal_rpc(http_url, signal_account, signal_group_id, message):
-    rpc_url = http_url.rstrip('/') + '/api/v1/rpc'
-    payload = {
-        'jsonrpc': '2.0',
-        'method': 'send',
-        'params': {
-            'account': signal_account,
-            'groupId': signal_group_id,
-            'message': message,
-        },
-        'id': 'incident-portal-send',
-    }
-    data = json.dumps(payload).encode('utf-8')
-    req = request.Request(
-        rpc_url,
-        data=data,
-        headers={'Content-Type': 'application/json'},
-        method='POST',
-    )
-    with request.urlopen(req, timeout=30) as resp:
-        body = resp.read().decode('utf-8', errors='replace')
-        parsed = json.loads(body)
-        if 'error' in parsed:
-            return False, f"Signal RPC error: {parsed['error']}"
-        return True, body or 'notifikasi Signal berhasil dikirim via RPC'
-
-
-def _send_via_signal_cli(signal_cli, signal_account, signal_group_id, message):
-    cmd = [
-        signal_cli,
-        '-a', signal_account,
-        'send',
-        '-g', signal_group_id,
-        '-m', message,
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=60)
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout or '').strip() or f'exit {result.returncode}'
-        return False, detail
-    return True, (result.stdout or 'notifikasi Signal berhasil dikirim via CLI').strip()
 
 
 def _send_via_telegram_bot(bot_token, chat_id, thread_id, message):
@@ -135,42 +92,16 @@ def send_new_ticket_notification(ticket, incident_record=None):
     telegram_topic_insiden_id = str(current_app.config.get('TELEGRAM_TOPIC_INSIDEN_ID', '') or '').strip()
     message = _build_message(ticket, incident_record=incident_record)
 
-    if telegram_bot_token and telegram_group_id:
-        try:
-            return _send_via_telegram_bot(telegram_bot_token, telegram_group_id, telegram_topic_insiden_id, message)
-        except Exception as telegram_exc:
-            telegram_error = str(telegram_exc)
-            if isinstance(telegram_exc, error.HTTPError):
-                try:
-                    telegram_error = telegram_exc.read().decode('utf-8', errors='replace') or str(telegram_exc)
-                except Exception:
-                    telegram_error = str(telegram_exc)
-            return False, f'Notifikasi Telegram gagal: {telegram_error}'
-
-    signal_account = current_app.config.get('SIGNAL_ACCOUNT', '').strip()
-    signal_group_id = current_app.config.get('SIGNAL_GROUP_ID', '').strip()
-    signal_cli = current_app.config.get('SIGNAL_CLI_PATH', '/usr/local/bin/signal-cli').strip()
-    signal_http_url = current_app.config.get('SIGNAL_HTTP_URL', 'http://127.0.0.1:8080').strip()
-
-    if not signal_account or not signal_group_id:
-        return False, 'Konfigurasi Telegram belum lengkap dan SIGNAL_ACCOUNT atau SIGNAL_GROUP_ID belum diisi'
+    if not telegram_bot_token or not telegram_group_id:
+        return False, 'Konfigurasi TELEGRAM_BOT_TOKEN atau TELEGRAM_GROUP_ID belum diisi'
 
     try:
-        return _send_via_signal_rpc(signal_http_url, signal_account, signal_group_id, message)
-    except Exception as rpc_exc:
-        rpc_error = str(rpc_exc)
-        if isinstance(rpc_exc, error.HTTPError):
+        return _send_via_telegram_bot(telegram_bot_token, telegram_group_id, telegram_topic_insiden_id, message)
+    except Exception as telegram_exc:
+        telegram_error = str(telegram_exc)
+        if isinstance(telegram_exc, error.HTTPError):
             try:
-                rpc_error = rpc_exc.read().decode('utf-8', errors='replace') or str(rpc_exc)
+                telegram_error = telegram_exc.read().decode('utf-8', errors='replace') or str(telegram_exc)
             except Exception:
-                rpc_error = str(rpc_exc)
-
-    try:
-        ok, detail = _send_via_signal_cli(signal_cli, signal_account, signal_group_id, message)
-        if ok:
-            return True, detail
-        return False, f'RPC gagal: {rpc_error} | CLI gagal: {detail}'
-    except subprocess.TimeoutExpired:
-        return False, f'RPC gagal: {rpc_error} | CLI timeout saat mengirim notifikasi'
-    except Exception as cli_exc:
-        return False, f'RPC gagal: {rpc_error} | CLI gagal: {cli_exc}'
+                telegram_error = str(telegram_exc)
+        return False, f'Notifikasi Telegram gagal: {telegram_error}'

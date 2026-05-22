@@ -29,12 +29,12 @@ Sistem incident utama tetap berada di:
 
 ## Integrasi Incident
 - submit tiket portal harus membuat tiket baru di incident engine
-- update status lanjutan tetap bisa dilakukan oleh petugas TI melalui Signal seperti alur saat ini
+- update status lanjutan tetap bisa dilakukan oleh petugas TI melalui Telegram sesuai alur yang aktif
 - dashboard pegawai harus menampilkan status terbaru tiket miliknya
 
-## Notifikasi Signal
-- notifikasi tiket baru dikirim ke grup Signal TI jika konfigurasi `SIGNAL_ACCOUNT` dan `SIGNAL_GROUP_ID` tersedia
-- jika konfigurasi Signal belum diisi, portal tetap boleh membuat tiket, tetapi notifikasi grup dicatat sebagai pending/failed di log lokal aplikasi
+## Notifikasi Telegram
+- notifikasi tiket baru dikirim ke grup Telegram TI jika konfigurasi `TELEGRAM_BOT_TOKEN` dan `TELEGRAM_GROUP_ID` tersedia
+- jika konfigurasi Telegram belum diisi, portal tetap boleh membuat tiket, tetapi notifikasi grup dicatat sebagai pending/failed di log lokal aplikasi
 
 ## Catatan Teknis
 - Jangan memindahkan folder `/home/ubnt/incidents` atau `/home/ubnt/dasborpim` dari portal ini.

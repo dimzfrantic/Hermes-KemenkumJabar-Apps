@@ -8,7 +8,7 @@ Fitur MVP fase 1:
 - Ganti password saat login pertama
 - Form tiket baru
 - Submit tiket ke incident engine yang sudah aktif di `/home/ubnt/incidents`
-- Notifikasi ke grup Signal TI (jika env Signal diisi)
+- Notifikasi ke grup Telegram TI (jika env Telegram diisi)
 - Dashboard pegawai untuk melihat status tiket miliknya
 - Sinkron status tiket dari database incident PostgreSQL
 
@@ -17,7 +17,7 @@ Struktur penting:
 - `models.py` : model user dan tiket portal
 - `routes/` : auth, portal pegawai, admin import pegawai
 - `services/incident_gateway.py` : integrasi ke incident writer dan database incident PostgreSQL
-- `services/signal_notifier.py` : notifikasi ke Signal group via signal-cli
+- `services/telegram_notifier.py` : notifikasi ke grup Telegram
 - `uploads/` : lampiran tiket dari portal
 - `instance/incident_portal.db` : database lokal portal
 
