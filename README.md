@@ -1,11 +1,10 @@
 Hermes-KemenkumJabar-Apps
 
-Paket aplikasi internal Kementerian Hukum Jawa Barat untuk deployment, migrasi, dokumentasi operasional, dan integrasi Hermes secara modular.
+Paket aplikasi internal untuk deployment, migrasi, dokumentasi operasional, dan integrasi Hermes secara modular.
 
 Komponen utama:
 - Dasborpim
-- Incident Engine
-- Incident Portal
+- Incident App (Portal + Incident Engine)
 - Certificate Generator
 - Hermes Agent
 - Hermes Gateway Telegram
@@ -21,6 +20,7 @@ Prinsip utama:
 - file sensitif tidak disimpan di git
 - source aplikasi inti tetap dipisahkan dari konfigurasi produksi
 - Hermes berfungsi sebagai layer otomasi dan komunikasi, bukan pengganti aplikasi inti
+- instalasi diarahkan non-interaktif melalui skrip + file env yang diisi user sendiri
 
 Struktur repo
 - apps/
@@ -28,7 +28,7 @@ Struktur repo
 - docs/
   Dokumentasi arsitektur, instalasi, integrasi, migrasi, backup, dan troubleshooting.
 - install/
-  Installer modular per komponen dan installer gabungan.
+  Installer modular per komponen, template env, dan installer gabungan.
 - deploy/
   Template systemd, cron, dan nginx.
 - migration/
@@ -36,99 +36,31 @@ Struktur repo
 - .hermes-template/
   Template SOUL.md, config.yaml.example, gateway.env.example, dan memory example.
 
+Struktur aplikasi insiden
+- apps/incident-portal/
+  Web app admin/pegawai.
+- apps/incident-portal/incident_engine/
+  Engine inti tiket, histori, bukti, dan integrasi Drive.
+
 Mode penggunaan
 1. Install aplikasi tertentu saja
-   Contoh: hanya Dasborpim, atau hanya Certificate Generator.
-
 2. Install stack insiden
-   - Incident Engine
-   - Incident Portal
-
+   - Incident App (portal + engine dalam satu folder induk)
 3. Install Hermes saja
-   - Hermes Agent
-   - Hermes Gateway Telegram
-
 4. Install full stack
-   - seluruh aplikasi
-   - Hermes Agent
-   - Hermes Gateway Telegram
 
-Quick start
+Quick start non-interaktif
 1. Baca docs/00-arsitektur.md
 2. Baca docs/01-prasyarat-server.md
 3. Baca docs/10-env-secrets-checklist.md
-4. Jalankan installer sesuai kebutuhan:
-   - install/install-shared-deps.sh
-   - install/install-dasborpim.sh
-   - install/install-incidents.sh
-   - install/install-incident-portal.sh
-   - install/install-certificate-generator.sh
-   - install/install-hermes-agent.sh
-   - install/install-hermes-gateway.sh
-   - install/install-all.sh
-
-Urutan baca dokumentasi yang disarankan
-1. docs/00-arsitektur.md
-2. docs/01-prasyarat-server.md
-3. docs/10-env-secrets-checklist.md
-4. docs/02-instal-dasborpim.md
-5. docs/03-instal-incident-engine.md
-6. docs/04-instal-incident-portal.md
-7. docs/05-instal-certificate-generator.md
-8. docs/06-instal-hermes-agent.md
-9. docs/07-instal-hermes-gateway-telegram.md
-10. docs/08-integrasi-hermes-aplikasi.md
-11. docs/09-systemd-cron-service.md
-12. docs/11-backup-restore.md
-13. docs/12-migrasi-memory-soul-agents.md
-14. docs/13-troubleshooting.md
-
-Prasyarat umum server
-- Ubuntu atau Debian
-- git
-- curl
-- python3
-- python3-venv
-- python3-pip
-- PostgreSQL
-- nginx opsional
-- LibreOffice/soffice untuk Certificate Generator
-- font pendukung sertifikat
-- akses internet untuk instalasi dependency
-- token/kredensial manual sesuai komponen yang digunakan
-
-Komponen sensitif yang tidak boleh masuk git
-- file .env asli
-- token Telegram
-- API key provider/model Hermes
-- Google OAuth/token
-- auth.json Hermes
-- database dump produksi
-- uploads, lampiran, dan bukti produksi
-- state.db dan session produksi Hermes
-
-Komponen Hermes yang didukung migrasi
-- SOUL.md
-- AGENTS.md per aplikasi
-- MEMORY.md
-- USER.md
-- skills
-- config.yaml setelah disesuaikan
-- state.db secara opsional jika continuity session diperlukan
-
-Catatan deploy
-- template di folder deploy/ adalah contoh awal dan perlu disesuaikan dengan path serta user server tujuan
-- installer di folder install/ adalah dasar modular dan dapat disempurnakan sesuai lingkungan final
-- file sensitif dan review manual disimpan terpisah dari repo git
-
-Status repo saat ini
-- struktur repo sudah dibangun
-- source code inti sudah masuk dan disanitasi
-- template Hermes dan deploy sudah tersedia
-- dokumentasi inti sudah tersedia dan dapat dilanjutkan penyempurnaannya
-
-Rekomendasi langkah berikutnya
-- finalisasi isi dokumen prioritas per aplikasi
-- finalisasi template deploy dan cron sesuai server tujuan
-- uji installer modular pada server baru/staging
-- lakukan commit lanjutan bertahap untuk penyempurnaan dokumentasi dan operasional
+4. Salin template env dari install/templates/
+5. Isi semua nilai __REQUIRED__ dengan data final user sendiri
+6. Jalankan installer sesuai kebutuhan:
+   - bash install/install-shared-deps.sh
+   - bash install/install-dasborpim.sh --env-file /path/dasborpim.env
+   - bash install/install-incidents.sh --env-file /path/incidents.env
+   - bash install/install-incident-portal.sh --env-file /path/incident-portal.env
+   - bash install/install-certificate-generator.sh --env-file /path/certificate-generator.env
+   - bash install/install-hermes-agent.sh --env-file /path/hermes-agent.env
+   - bash install/install-hermes-gateway.sh --env-file /path/hermes-gateway.env
+   - bash install/install-all.sh --config-dir /path/config-dir

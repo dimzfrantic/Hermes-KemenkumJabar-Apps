@@ -1,0 +1,649 @@
+{% extends 'base.html' %}
+{% block title %}Rekap Insiden{% endblock %}
+
+{% macro status_class(status) -%}
+{%- set value = (status or '')|upper -%}
+{%- if value == 'OPEN' -%}status-open
+{%- elif value == 'IN_PROGRESS' -%}status-progress
+{%- elif value == 'PENDING' -%}status-pending
+{%- elif value == 'RESOLVED' -%}status-resolved
+{%- elif value == 'CLOSED' -%}status-closed
+{%- else -%}status-open
+{%- endif -%}
+{%- endmacro %}
+
+{% block extra_head %}
+<style>
+.page-wrap.admin-page { max-width: 1380px; }
+.admin-shell.recap-admin-shell {
+  --bg: #eef3ff;
+  --panel: #ffffff;
+  --panel-2: #f7f9ff;
+  --panel-3: rgba(94,106,210,.06);
+  --line: rgba(36,48,82,.16);
+  --line-soft: rgba(36,48,82,.10);
+  --line-strong: rgba(36,48,82,.18);
+  --text: #162033;
+  --muted: #5f6b85;
+  --soft: #2f3d59;
+  --accent: #4c5dd9;
+  --accent-2: #6f7cff;
+  --danger: #d95c5c;
+  --warning: #b98500;
+  --success: #1f9e6d;
+  --hero-glow-1: rgba(111,124,255,.18);
+  --hero-glow-2: rgba(76,93,217,.10);
+  --card-bg: rgba(255,255,255,.88);
+  --card-bg-hover: rgba(255,255,255,.98);
+  --row-hover: rgba(76,93,217,.04);
+  --shadow-lg: 0 24px 64px rgba(31,54,107,.14);
+  --shadow-inset: inset 0 1px 0 rgba(255,255,255,.78);
+  --pill-bg: rgba(255,255,255,.78);
+  color: var(--text);
+  background:
+    radial-gradient(circle at top right, var(--hero-glow-1), transparent 28%),
+    radial-gradient(circle at left top, var(--hero-glow-2), transparent 25%),
+    var(--bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 24px;
+  box-shadow: var(--shadow-lg);
+  padding: 24px;
+}
+body[data-theme="dark"] .admin-shell.recap-admin-shell {
+  --bg: #08090a;
+  --panel: #0f1011;
+  --panel-2: #15171a;
+  --panel-3: rgba(255,255,255,.03);
+  --line: rgba(255,255,255,.08);
+  --line-soft: rgba(255,255,255,.05);
+  --line-strong: rgba(255,255,255,.12);
+  --text: #f7f8f8;
+  --muted: #8a8f98;
+  --soft: #d0d6e0;
+  --accent: #5e6ad2;
+  --accent-2: #7170ff;
+  --danger: #ff7d7d;
+  --warning: #ffd76a;
+  --success: #3ccf91;
+  --hero-glow-1: rgba(113,112,255,.16);
+  --hero-glow-2: rgba(94,106,210,.12);
+  --card-bg: rgba(255,255,255,.03);
+  --card-bg-hover: rgba(255,255,255,.05);
+  --row-hover: rgba(255,255,255,.02);
+  --shadow-lg: 0 24px 64px rgba(0,0,0,.34);
+  --shadow-inset: inset 0 1px 0 rgba(255,255,255,.03);
+  --pill-bg: rgba(255,255,255,.03);
+}
+.recap-shell {
+  display: grid;
+  gap: 1rem;
+  width: 100%;
+}
+.recap-shell > * {
+  width: 100%;
+  min-width: 0;
+}
+.recap-shell .hero-banner,
+.recap-shell .panel-shell,
+.recap-shell .recap-summary-card,
+.recap-shell .table-shell {
+  background: var(--card-bg) !important;
+  border: 1px solid var(--line-soft) !important;
+  box-shadow: var(--shadow-inset) !important;
+  color: var(--text);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+.recap-shell .hero-banner {
+  margin-bottom: 0;
+  display: block;
+}
+.recap-shell .hero-text,
+.recap-shell .section-subtitle,
+.recap-shell .soft-badge,
+.recap-shell .form-label {
+  color: var(--soft);
+}
+.recap-shell .hero-eyebrow { color: var(--accent-2); }
+.recap-shell .section-title,
+.recap-shell .hero-title { color: var(--text); }
+.recap-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+.recap-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+  align-items: end;
+}
+.recap-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 1rem;
+}
+.recap-summary-card {
+  border-radius: 18px;
+  padding: 18px;
+}
+.recap-summary-label {
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+.recap-summary-value {
+  color: var(--text);
+  font-size: clamp(34px, 5vw, 56px);
+  line-height: .95;
+  font-weight: 600;
+  letter-spacing: -0.05em;
+  margin-bottom: 10px;
+}
+.recap-summary-note { color: var(--soft); font-size: 14px; line-height: 1.55; }
+.table-shell {
+  margin-top: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-radius: 18px;
+}
+.panel-shell {
+  overflow: hidden;
+}
+.recap-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: transparent !important;
+}
+.recap-table th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text);
+  font-weight: 700;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line-strong);
+  background: color-mix(in srgb, var(--panel-2) 92%, var(--accent) 8%);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  backdrop-filter: blur(10px);
+}
+.recap-table td {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--soft);
+  vertical-align: top;
+  font-size: 14px;
+  background: transparent !important;
+  transition: background-color .18s ease, transform .18s ease;
+}
+.recap-table-compact {
+  table-layout: fixed;
+}
+.recap-table-compact th,
+.recap-table-compact td {
+  padding: 12px 12px;
+  font-size: 13px;
+}
+.recap-table-compact th {
+  font-size: 10.5px;
+}
+.recap-table-compact td {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.stack-meta {
+  display: grid;
+  gap: 6px;
+}
+.stack-meta strong {
+  color: var(--text);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.stack-meta .meta-note {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.stack-meta .meta-note.mono-copy {
+  font-size: 11.5px;
+}
+.status-block {
+  display: grid;
+  gap: 8px;
+}
+.status-block .meta-note {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.recap-table tbody tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--panel-3) 48%, transparent 52%) !important;
+}
+.recap-table tr:hover td { background: var(--row-hover) !important; }
+.recap-table tr:last-child td { border-bottom: 0; }
+.mono-copy {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--muted);
+  font-size: 12px;
+}
+.status-chip,
+.sla-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+.status-open { background: color-mix(in srgb, var(--muted) 14%, transparent 86%); color: var(--soft); border-color: var(--line-soft); }
+.status-progress { background: color-mix(in srgb, var(--success) 18%, transparent 82%); color: color-mix(in srgb, var(--success) 78%, white 22%); border-color: color-mix(in srgb, var(--success) 28%, transparent 72%); }
+.status-pending { background: color-mix(in srgb, var(--warning) 18%, transparent 82%); color: color-mix(in srgb, var(--warning) 72%, white 28%); border-color: color-mix(in srgb, var(--warning) 26%, transparent 74%); }
+.status-resolved,
+.status-closed { background: color-mix(in srgb, var(--accent) 16%, transparent 84%); color: color-mix(in srgb, var(--accent-2) 72%, white 28%); border-color: color-mix(in srgb, var(--accent-2) 24%, transparent 76%); }
+.sla-red { background: color-mix(in srgb, var(--danger) 16%, transparent 84%); color: color-mix(in srgb, var(--danger) 78%, white 22%); border-color: color-mix(in srgb, var(--danger) 28%, transparent 72%); }
+.sla-yellow { background: color-mix(in srgb, var(--warning) 16%, transparent 84%); color: color-mix(in srgb, var(--warning) 74%, white 26%); border-color: color-mix(in srgb, var(--warning) 28%, transparent 72%); }
+.recap-split-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+@media (max-width: 1200px) {
+  .recap-filter-grid,
+  .recap-summary-grid,
+  .recap-split-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 900px) {
+  .recap-filter-grid,
+  .recap-summary-grid,
+  .recap-split-grid { grid-template-columns: 1fr; }
+  .recap-table,
+  .recap-table thead,
+  .recap-table tbody,
+  .recap-table tr,
+  .recap-table th,
+  .recap-table td { display: block; }
+  .recap-table {
+    min-width: 0;
+  }
+  .recap-table thead {
+    display: none;
+  }
+  .recap-table tbody {
+    display: grid;
+    gap: .85rem;
+    padding: .85rem;
+  }
+  .recap-table tr {
+    border: 1px solid var(--line-soft);
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--panel-2) 72%, var(--card-bg) 28%);
+    overflow: hidden;
+  }
+  .recap-table td {
+    padding: .8rem 1rem;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .recap-table td:last-child {
+    border-bottom: 0;
+  }
+  .recap-table td::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    margin-bottom: .35rem;
+  }
+  .recap-actions .btn { width: 100%; }
+  .admin-shell.recap-admin-shell { padding: 16px; }
+}
+</style>
+{% endblock %}
+
+{% block main_class %}page-wrap admin-page{% endblock %}
+
+{% block content %}
+<div class="admin-shell recap-admin-shell">
+  <div class="recap-shell">
+    <div class="hero-banner" style="width:100%;max-width:100%;margin-bottom:0;background:var(--card-bg)!important;border:1px solid var(--line-soft)!important;box-shadow:var(--shadow-inset)!important;display:block;">
+<div class="section-head mb-0">
+<div>
+<div class="hero-eyebrow"><i class="bi bi-bar-chart-line"></i> Admin Portal</div>
+<h1 class="hero-title">Rekap Insiden</h1>
+<p class="hero-text">Rekap insiden untuk kebutuhan telaah, filter periode, dan export Excel/PDF dengan tampilan yang selaras dengan dashboard portal.</p>
+</div>
+<div class="soft-badge"><i class="bi bi-calendar-range"></i> {{ recap_dataset.period_label }}</div>
+</div>
+</div>
+<section class="panel-shell p-4" style="width:100%;max-width:100%;background:var(--card-bg)!important;border:1px solid var(--line-soft)!important;box-shadow:var(--shadow-inset)!important;">
+<div class="section-head">
+<div>
+<h2 class="section-title">Filter Rekap</h2>
+<div class="section-subtitle">Atur jenis rekap dan filter data insiden sebelum ditampilkan atau diunduh.</div>
+</div>
+</div>
+<form method="get" action="{{ url_for('admin.recap') }}">
+<div class="recap-filter-grid">
+<div>
+<label class="form-label" for="report_type">Jenis rekap</label>
+<select class="form-select" id="report_type" name="report_type">
+{% for value, label in recap_report_types %}
+<option value="{{ value }}" {% if recap_form_values.report_type == value %}selected{% endif %}>{{ label }}</option>
+{% endfor %}
+</select>
+</div>
+<div>
+<label class="form-label" for="start_date">Tanggal awal</label>
+<input class="form-control" id="start_date" type="date" name="start_date" value="{{ recap_form_values.start_date }}">
+</div>
+<div>
+<label class="form-label" for="end_date">Tanggal akhir</label>
+<input class="form-control" id="end_date" type="date" name="end_date" value="{{ recap_form_values.end_date }}">
+</div>
+<div>
+<label class="form-label" for="status">Status</label>
+<select class="form-select" id="status" name="status">
+<option value="" {% if not recap_form_values.status %}selected{% endif %}>Semua status</option>
+<option value="OPEN" {% if recap_form_values.status == 'OPEN' %}selected{% endif %}>OPEN</option>
+<option value="IN_PROGRESS" {% if recap_form_values.status == 'IN_PROGRESS' %}selected{% endif %}>IN_PROGRESS</option>
+<option value="PENDING" {% if recap_form_values.status == 'PENDING' %}selected{% endif %}>PENDING</option>
+<option value="RESOLVED" {% if recap_form_values.status == 'RESOLVED' %}selected{% endif %}>RESOLVED</option>
+<option value="CLOSED" {% if recap_form_values.status == 'CLOSED' %}selected{% endif %}>CLOSED</option>
+</select>
+</div>
+<div>
+<label class="form-label" for="category">Kategori</label>
+<select class="form-select" id="category" name="category">
+<option value="" {% if not recap_form_values.category %}selected{% endif %}>Semua kategori</option>
+<option value="Network" {% if recap_form_values.category == 'Network' %}selected{% endif %}>Network</option>
+<option value="Application" {% if recap_form_values.category == 'Application' %}selected{% endif %}>Application</option>
+<option value="Hardware" {% if recap_form_values.category == 'Hardware' %}selected{% endif %}>Hardware</option>
+<option value="Other" {% if recap_form_values.category == 'Other' %}selected{% endif %}>Other</option>
+</select>
+</div>
+<div>
+<label class="form-label" for="petugas">Petugas</label>
+<input class="form-control" id="petugas" type="text" name="petugas" value="{{ recap_form_values.petugas }}" placeholder="Nama petugas">
+</div>
+<div>
+<label class="form-label" for="lokasi">Lokasi</label>
+<input class="form-control" id="lokasi" type="text" name="lokasi" value="{{ recap_form_values.lokasi }}" placeholder="Filter lokasi">
+</div>
+</div>
+<div class="recap-actions mt-3">
+<button class="btn btn-primary" type="submit">Tampilkan Rekap</button>
+<button class="btn btn-outline-success" type="submit" formaction="{{ url_for('admin.export_recap') }}" name="format" value="xlsx">Unduh Excel</button>
+<button class="btn btn-outline-danger" type="submit" formaction="{{ url_for('admin.export_recap') }}" name="format" value="pdf">Unduh PDF</button>
+</div>
+</form>
+</section>
+
+<section class="panel-shell p-4" style="width:100%;max-width:100%;background:var(--card-bg)!important;border:1px solid var(--line-soft)!important;box-shadow:var(--shadow-inset)!important;">
+<div class="section-head">
+<div>
+<h2 class="section-title">Ringkasan Status</h2>
+<div class="section-subtitle">Dibuat pada {{ recap_dataset.generated_at }}</div>
+</div>
+</div>
+<div class="recap-summary-grid">
+{% for label, value in recap_dataset.status_summary %}
+<article class="recap-summary-card">
+<div class="recap-summary-label">{{ label }}</div>
+<div class="recap-summary-value">{{ value }}</div>
+<div class="recap-summary-note">{{ recap_dataset.title }}</div>
+</article>
+{% endfor %}
+</div>
+</section>
+
+<section class="panel-shell p-4" style="width:100%;max-width:100%;background:var(--card-bg)!important;border:1px solid var(--line-soft)!important;box-shadow:var(--shadow-inset)!important;">
+<div class="section-head">
+<div>
+<h2 class="section-title">{{ recap_dataset.title }}</h2>
+<div class="section-subtitle">Total data: {{ recap_dataset.records|length }}</div>
+</div>
+</div>
+
+{% if recap_dataset.report_type == 'daftar_tiket' %}
+{% if recap_dataset.records %}
+<div class="table-shell" style="width:100%;background:var(--card-bg)!important;border:1px solid var(--line-soft)!important;box-shadow:var(--shadow-inset)!important;">
+<table class="recap-table recap-table-compact recap-daftar-table">
+<colgroup>
+<col style="width:6%">
+<col style="width:12%">
+<col style="width:10%">
+<col style="width:8%">
+<col style="width:11%">
+<col style="width:18%">
+<col style="width:12%">
+<col style="width:13%">
+<col style="width:10%">
+</colgroup>
+<thead>
+<tr>
+<th>Alias</th>
+<th>Kode Tiket</th>
+<th>Status</th>
+<th>Kategori</th>
+<th>Lokasi</th>
+<th>Masalah</th>
+<th>Pelapor / Petugas</th>
+<th>Waktu</th>
+<th>Durasi</th>
+</tr>
+</thead>
+<tbody>
+{% for row in recap_dataset.records %}
+<tr>
+<td data-label="Alias">{{ row.alias }}</td>
+<td data-label="Kode Tiket" class="mono-copy">{{ row.ticket_code }}</td>
+<td data-label="Status">
+  <div class="status-block">
+    <span class="status-chip {{ status_class(row.status) }}">{{ row.status }}</span>
+    {% if row.alasan_pending and row.alasan_pending != '-' %}
+    <div class="meta-note">Pending: {{ row.alasan_pending }}</div>
+    {% endif %}
+  </div>
+</td>
+<td data-label="Kategori">{{ row.kategori }}</td>
+<td data-label="Lokasi">{{ row.lokasi }}</td>
+<td data-label="Masalah">{{ row.masalah }}</td>
+<td data-label="Pelapor / Petugas">
+  <div class="stack-meta">
+    <div>
+      <strong>Pelapor</strong>
+      <div class="meta-note">{{ row.pelapor }}</div>
+    </div>
+    <div>
+      <strong>Petugas</strong>
+      <div class="meta-note">{{ row.petugas }}</div>
+    </div>
+  </div>
+</td>
+<td data-label="Waktu">
+  <div class="stack-meta">
+    <div>
+      <strong>Masuk</strong>
+      <div class="meta-note mono-copy">{{ row.created_at }}</div>
+    </div>
+    <div>
+      <strong>Update</strong>
+      <div class="meta-note mono-copy">{{ row.update_terakhir }}</div>
+    </div>
+  </div>
+</td>
+<td data-label="Durasi" class="mono-copy">{{ row.durasi }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% else %}
+<div class="empty-state">Tidak ada data tiket pada filter ini.</div>
+{% endif %}
+
+{% elif recap_dataset.report_type == 'per_petugas' %}
+<div class="table-shell" style="width:100%;background:var(--card-bg)!important;border:1px solid var(--line-soft)!important;box-shadow:var(--shadow-inset)!important;">
+<table class="recap-table">
+<thead>
+<tr>
+<th>Petugas</th>
+<th>Total</th>
+<th>OPEN</th>
+<th>IN_PROGRESS</th>
+<th>PENDING</th>
+<th>RESOLVED</th>
+<th>CLOSED</th>
+<th>Rata-rata Durasi</th>
+</tr>
+</thead>
+<tbody>
+{% for row in recap_dataset.petugas_rows %}
+<tr>
+<td data-label="Petugas">{{ row.petugas }}</td>
+<td data-label="Total">{{ row.total_tiket }}</td>
+<td data-label="OPEN">{{ row.open }}</td>
+<td data-label="IN_PROGRESS">{{ row.in_progress }}</td>
+<td data-label="PENDING">{{ row.pending }}</td>
+<td data-label="RESOLVED">{{ row.resolved }}</td>
+<td data-label="CLOSED">{{ row.closed }}</td>
+<td data-label="Rata-rata Durasi" class="mono-copy">{{ row.avg_durasi }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+
+{% elif recap_dataset.report_type == 'per_lokasi_kategori' %}
+<div class="recap-split-grid">
+<div class="table-shell" style="width:100%;background:var(--card-bg)!important;border:1px solid var(--line-soft)!important;box-shadow:var(--shadow-inset)!important;">
+<table class="recap-table">
+<thead>
+<tr>
+<th>Lokasi</th>
+<th>Jumlah</th>
+<th>OPEN</th>
+<th>IN_PROGRESS</th>
+<th>PENDING</th>
+<th>Selesai</th>
+<th>Masalah Terbanyak</th>
+</tr>
+</thead>
+<tbody>
+{% for row in recap_dataset.lokasi_rows %}
+<tr>
+<td data-label="Lokasi">{{ row.lokasi }}</td>
+<td data-label="Jumlah">{{ row.jumlah_tiket }}</td>
+<td data-label="OPEN">{{ row.open }}</td>
+<td data-label="IN_PROGRESS">{{ row.in_progress }}</td>
+<td data-label="PENDING">{{ row.pending }}</td>
+<td data-label="Selesai">{{ row.selesai }}</td>
+<td data-label="Masalah Terbanyak">{{ row.masalah_terbanyak }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+<div class="table-shell" style="width:100%;background:var(--card-bg)!important;border:1px solid var(--line-soft)!important;box-shadow:var(--shadow-inset)!important;">
+<table class="recap-table">
+<thead>
+<tr>
+<th>Kategori</th>
+<th>Jumlah</th>
+<th>Persentase</th>
+<th>OPEN</th>
+<th>IN_PROGRESS</th>
+<th>PENDING</th>
+<th>Selesai</th>
+</tr>
+</thead>
+<tbody>
+{% for row in recap_dataset.kategori_rows %}
+<tr>
+<td data-label="Kategori">{{ row.kategori }}</td>
+<td data-label="Jumlah">{{ row.jumlah_tiket }}</td>
+<td data-label="Persentase">{{ row.persentase }}%</td>
+<td data-label="OPEN">{{ row.open }}</td>
+<td data-label="IN_PROGRESS">{{ row.in_progress }}</td>
+<td data-label="PENDING">{{ row.pending }}</td>
+<td data-label="Selesai">{{ row.selesai }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+</div>
+
+{% elif recap_dataset.report_type == 'eksekutif' %}
+<div class="recap-split-grid">
+<div class="table-shell" style="width:100%;background:var(--card-bg)!important;border:1px solid var(--line-soft)!important;box-shadow:var(--shadow-inset)!important;">
+<table class="recap-table">
+<thead><tr><th>Petugas</th><th>Total</th><th>Resolved</th><th>Closed</th><th>Avg Durasi</th></tr></thead>
+<tbody>
+{% for row in recap_dataset.petugas_rows %}
+<tr><td data-label="Petugas">{{ row.petugas }}</td><td data-label="Total">{{ row.total_tiket }}</td><td data-label="Resolved">{{ row.resolved }}</td><td data-label="Closed">{{ row.closed }}</td><td data-label="Avg Durasi" class="mono-copy">{{ row.avg_durasi }}</td></tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+<div class="table-shell" style="width:100%;background:var(--card-bg)!important;border:1px solid var(--line-soft)!important;box-shadow:var(--shadow-inset)!important;">
+<table class="recap-table">
+<thead><tr><th>Lokasi</th><th>Jumlah</th><th>Masalah Terbanyak</th></tr></thead>
+<tbody>
+{% for row in recap_dataset.lokasi_rows %}
+<tr><td data-label="Lokasi">{{ row.lokasi }}</td><td data-label="Jumlah">{{ row.jumlah_tiket }}</td><td data-label="Masalah Terbanyak">{{ row.masalah_terbanyak }}</td></tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+</div>
+<div class="recap-split-grid">
+<div class="table-shell" style="width:100%;background:var(--card-bg)!important;border:1px solid var(--line-soft)!important;box-shadow:var(--shadow-inset)!important;">
+<table class="recap-table">
+<thead><tr><th>Kategori</th><th>Jumlah</th><th>Persentase</th></tr></thead>
+<tbody>
+{% for row in recap_dataset.kategori_rows %}
+<tr><td data-label="Kategori">{{ row.kategori }}</td><td data-label="Jumlah">{{ row.jumlah_tiket }}</td><td data-label="Persentase">{{ row.persentase }}%</td></tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+<div class="table-shell" style="width:100%;background:var(--card-bg)!important;border:1px solid var(--line-soft)!important;box-shadow:var(--shadow-inset)!important;">
+<table class="recap-table">
+<thead><tr><th>Alias</th><th>Kode</th><th>SLA</th><th>Status</th><th>Lokasi</th><th>Masalah</th><th>Petugas</th><th>Durasi Aktif</th></tr></thead>
+<tbody>
+{% for row in recap_dataset.urgent_rows %}
+<tr>
+<td data-label="Alias">{{ row.alias }}</td>
+<td data-label="Kode" class="mono-copy">{{ row.ticket_code }}</td>
+<td data-label="SLA"><span class="sla-chip {{ 'sla-red' if row.sla_level == 'RED' else 'sla-yellow' if row.sla_level == 'YELLOW' else '' }}">{{ row.sla_level }}</span></td>
+<td data-label="Status"><span class="status-chip {{ status_class(row.status) }}">{{ row.status }}</span></td>
+<td data-label="Lokasi">{{ row.lokasi }}</td>
+<td data-label="Masalah">{{ row.masalah }}</td>
+<td data-label="Petugas">{{ row.petugas }}</td>
+<td data-label="Durasi Aktif" class="mono-copy">{{ row.stagnation_label or '-' }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+</div>
+</div>
+{% endif %}
+    </section>
+  </div>
+</div>
+{% endblock %}

@@ -9,6 +9,8 @@ auth_bp = Blueprint('auth', __name__)
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated:
+        if current_user.role == 'admin':
+            return redirect(url_for('admin.dashboard'))
         return redirect(url_for('portal.dashboard'))
 
     if request.method == 'POST':
@@ -28,6 +30,8 @@ def login():
         if user.must_change_password:
             flash('Silakan ganti password awal Anda terlebih dahulu.', 'warning')
             return redirect(url_for('auth.change_password'))
+        if user.role == 'admin':
+            return redirect(url_for('admin.dashboard'))
         return redirect(url_for('portal.dashboard'))
 
     return render_template('login.html')
@@ -61,6 +65,8 @@ def change_password():
         current_user.must_change_password = False
         db.session.commit()
         flash('Password berhasil diperbarui.', 'success')
+        if current_user.role == 'admin':
+            return redirect(url_for('admin.dashboard'))
         return redirect(url_for('portal.dashboard'))
 
     return render_template('change_password.html')

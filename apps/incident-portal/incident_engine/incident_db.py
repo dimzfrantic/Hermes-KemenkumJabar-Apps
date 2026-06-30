@@ -99,11 +99,13 @@ def _env_value_from_file(env_path: Path, key: str) -> str:
 
 
 def load_database_url() -> str:
+    base_dir = Path(__file__).resolve().parent
+    portal_dir = base_dir.parent
     env_candidates = [
         os.environ.get('INCIDENT_DATABASE_URL', '').strip(),
         os.environ.get('DATABASE_URL', '').strip(),
-        _env_value_from_file(Path('/home/ubnt/incidents/.env'), 'DATABASE_URL'),
-        _env_value_from_file(Path('/home/ubnt/incident-portal/.env'), 'INCIDENT_DATABASE_URL'),
+        _env_value_from_file(base_dir / '.env', 'DATABASE_URL'),
+        _env_value_from_file(portal_dir / '.env', 'INCIDENT_DATABASE_URL'),
     ]
     for value in env_candidates:
         if value and value.startswith('postgresql'):

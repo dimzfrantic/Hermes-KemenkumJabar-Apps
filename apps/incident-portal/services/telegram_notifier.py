@@ -16,6 +16,7 @@ def _extract_link_from_response(label, response_text):
 def _build_message(ticket, incident_record=None):
     incident_record = incident_record or {}
     masalah = incident_record.get('masalah') or ticket.problem_summary
+    pelapor = str(incident_record.get('pelapor') or '').strip() or ticket.user.full_name if ticket.user else 'Admin'
     handled_by = ''
     if str(ticket.status_cache or '').upper() != 'OPEN':
         handled_by = str(incident_record.get('ditangani_oleh') or ticket.handled_by_cache or '').strip()
@@ -26,7 +27,7 @@ def _build_message(ticket, incident_record=None):
         'Tiket baru dari portal pegawai',
         f'Alias: {ticket.ticket_alias}',
         f'Kode: {ticket.ticket_code}',
-        f'Pelapor: {ticket.user.full_name}',
+        f'Pelapor: {pelapor}',
         f'Lokasi: {ticket.location}',
         f'Masalah: {masalah}',
         f'Status: {ticket.status_cache}',

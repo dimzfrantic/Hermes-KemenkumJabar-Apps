@@ -38,6 +38,8 @@ def allowed_file(filename):
 @portal_bp.route('/')
 @login_required
 def dashboard():
+    if current_user.role == 'admin':
+        return redirect(url_for('admin.active_tickets'))
     tickets = PortalTicket.query.filter_by(user_id=current_user.id).order_by(PortalTicket.created_at.desc()).all()
     try:
         synced = sync_portal_tickets(tickets, active_only=True)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Incident Writer - PostgreSQL Incident Tracking untuk Kementerian Hukum Jawa Barat
-Location: /home/ubnt/incidents/
+Incident Writer - PostgreSQL Incident Tracking
+Canonical location: apps/incident-portal/incident_engine/
 """
 
 import sys
@@ -16,7 +16,10 @@ from pathlib import Path
 # Google Drive imports
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
-import incident_db
+try:
+    from . import incident_db
+except ImportError:
+    import incident_db
 
 # ============== CONFIGURATION ==============
 SHEET_NAME = 'incident_log'
@@ -137,11 +140,25 @@ def sanitize_drive_name(value, fallback='Bukti Incident'):
 
 
 def ensure_ticket_bukti_folder(ticket_code, alias, lokasi, existing_link=''):
-    """Ensure one evidence folder exists for a ticket and return its link."""
-    if existing_link:
-        return existing_link
+    """Ensure one evidence folder exists for a ticket and return its link.
 
+    If the database stores an old Google Drive folder link that was deleted,
+    ignore it and create/find a fresh folder under the configured root.
+    """
     service = get_drive_service()
+    existing_folder_id = extract_drive_id(existing_link)
+    if existing_folder_id:
+        try:
+            existing = service.files().get(
+                fileId=existing_folder_id,
+                fields='id, name, trashed, webViewLink'
+            ).execute()
+            if not existing.get('trashed'):
+                return existing.get('webViewLink') or f"https://drive.google.com/drive/folders/{existing_folder_id}"
+        except Exception:
+            # Folder link in DB is stale/deleted/inaccessible; recreate below.
+            pass
+
     folder_name = sanitize_drive_name(f'{ticket_code} - tiket {alias} - {lokasi}', fallback=ticket_code)
     escaped_folder_name = folder_name.replace("'", "\\'")
     query = (
@@ -835,17 +852,18 @@ def cmd_list(args):
     sorted_records = sorted(records, key=lambda x: x.get('created_at', ''), reverse=True)
     
     status_label = 'BERSTATUS ' + status_filter if status_filter else 'TERBARU'
-    lines = ['[i] DAFTAR INCIDENT ' + status_label, '='*40, 'Gunakan alias: "tiket 1", "tiket 2", dst.', '']
-    
+    lines = ['DAFTAR INCIDENT ' + status_label, '='*40]
+
     for i, row in enumerate(sorted_records[:limit], 1):
         code = row.get('ticket_code', 'N/A')
-        loc = row.get('lokasi', '-')
-        masalah = row.get('masalah', '-')[:40]
+        loc = re.sub(r'\s+', ' ', str(row.get('lokasi', '-') or '-')).strip()
+        masalah_raw = re.sub(r'\s+', ' ', str(row.get('masalah', '-') or '-')).strip()
+        masalah = (masalah_raw[:57] + '...') if len(masalah_raw) > 60 else masalah_raw
         status = row.get('status', 'OPEN')
         created = row.get('created_at', '')[:16]
-        durasi = row.get('durasi', '-')
+        durasi = re.sub(r'\s+', ' ', str(row.get('durasi', '') or '')).strip()
         alias = row.get('alias', str(i))
-        
+
         status_icon_map = {
             'OPEN': '[O]',
             'IN_PROGRESS': '[~]',
@@ -854,14 +872,17 @@ def cmd_list(args):
             'CLOSED': '[X]'
         }
         status_icon = status_icon_map.get(status, '[?]')
-        lines.append(status_icon + ' [' + code + '] alias: tiket ' + str(alias) + ' | ' + status)
-        lines.append('   ' + loc + ' | ' + created + ' | ' + durasi)
-        lines.append('   ' + masalah + '...')
-        lines.append('')
-    
+        parts = ['tiket ' + str(alias), code, loc, masalah, status]
+        if created:
+            parts.append(created)
+        if durasi and durasi != '-':
+            parts.append(durasi)
+        lines.append(str(i) + '. ' + ' | '.join(parts))
+
+    lines.append('')
     lines.append('Total: ' + str(len(sorted_records)) + ' incident')
     if not status_filter:
-        lines.append('Filter: "list --status OPEN" untuk belum selesai')
+        lines.append('Filter cepat: list tiket open / pending / inprogress / resolved / closed')
     return '\n'.join(lines)
 
 def parse_summary_message(message):

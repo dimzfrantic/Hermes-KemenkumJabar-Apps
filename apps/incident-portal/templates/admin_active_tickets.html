@@ -1,0 +1,400 @@
+{% extends 'base.html' %}
+{% block title %}Operasional Tiket Aktif{% endblock %}
+
+{% block extra_head %}
+<style>
+  .ops-shell { max-width: 1480px; margin: 0 auto; }
+  .ops-hero {
+    display: flex; justify-content: space-between; gap: 16px; align-items: center; margin-bottom: 18px;
+    padding: 16px 18px; border-radius: 20px; border: 1px solid rgba(148,163,184,.16);
+    background: linear-gradient(135deg, rgba(99,102,241,.10), rgba(255,255,255,.94));
+    box-shadow: 0 12px 30px rgba(15,23,42,.06);
+  }
+  body[data-theme="dark"] .ops-hero {
+    background: linear-gradient(135deg, rgba(99,102,241,.16), rgba(15,23,42,.88));
+    border-color: rgba(148,163,184,.12); box-shadow: none;
+  }
+  .ops-title { font-size: clamp(1.55rem, 3vw, 2.1rem); font-weight: 800; letter-spacing: -0.04em; margin: 0; }
+  .ops-count { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 999px; background: rgba(99,102,241,.12); color: #4338ca; font-weight: 700; }
+  .section-label { margin: 16px 0 10px; font-size: .92rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted, #64748b); }
+  .ticket-list { display: grid; gap: 10px; }
+  .ticket-item {
+    border: 1px solid rgba(148,163,184,.18); border-radius: 18px; background: rgba(255,255,255,.96);
+    overflow: hidden; box-shadow: 0 12px 28px rgba(15,23,42,.05);
+  }
+  body[data-theme="dark"] .ticket-item { background: rgba(15,23,42,.82); border-color: rgba(148,163,184,.14); box-shadow: none; }
+  .ticket-summary {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center;
+    padding: 14px 16px;
+  }
+  .ticket-mainline { font-weight: 800; font-size: 1rem; letter-spacing: -0.02em; }
+  .ticket-subline { margin-top: 4px; font-size: .92rem; color: var(--text-muted, #64748b); }
+  .ticket-status-line { margin-top: 6px; font-size: .84rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+  .status-open { color: #2563eb; }
+  .status-progress { color: #c2410c; }
+  .status-pending { color: #a16207; }
+  .status-resolved { color: #047857; }
+  .status-closed { color: #374151; }
+  .summary-actions { display: flex; align-items: center; gap: 8px; }
+  .detail-toggle[aria-expanded="true"] .toggle-label-open { display: inline; }
+  .detail-toggle[aria-expanded="true"] .toggle-label-closed { display: none; }
+  .detail-toggle[aria-expanded="false"] .toggle-label-open { display: none; }
+  .detail-toggle[aria-expanded="false"] .toggle-label-closed { display: inline; }
+  .ticket-detail {
+    display: none; border-top: 1px solid rgba(148,163,184,.16); padding: 14px 16px 16px;
+    background: rgba(248,250,252,.76);
+  }
+  body[data-theme="dark"] .ticket-detail { background: rgba(255,255,255,.03); border-top-color: rgba(148,163,184,.12); }
+  .ticket-detail.is-open { display: block; }
+  .ops-form { display: grid; gap: 14px; }
+  .ops-grid-top { display: grid; grid-template-columns: minmax(0, 1.3fr) 210px 190px; gap: 12px; align-items: end; }
+  .ops-grid-note { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .form-label-sm { font-size: .76rem; font-weight: 700; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .03em; opacity: .78; }
+  .ops-section {
+    border: 1px solid rgba(148,163,184,.14); border-radius: 14px; padding: 12px; background: rgba(255,255,255,.55);
+  }
+  body[data-theme="dark"] .ops-section { background: rgba(255,255,255,.02); border-color: rgba(148,163,184,.12); }
+  .detail-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .detail-item strong { display: block; font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; opacity: .72; margin-bottom: 4px; }
+  .detail-item span, .detail-item div { font-size: .92rem; }
+  .link-list { display: flex; flex-wrap: wrap; gap: 8px; }
+  .footer-actions { display: flex; justify-content: flex-end; gap: 10px; align-items: center; padding-top: 8px; }
+  .btn-danger-soft { background: #dc2626; border-color: #dc2626; color: #fff; }
+  .upload-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: end; }
+  .empty-state { border: 1px dashed rgba(148,163,184,.4); border-radius: 18px; padding: 28px; text-align: center; color: var(--text-muted, #6b7280); }
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0,0,0,.45); justify-content: center; align-items: center;
+    padding: 24px;
+  }
+  .modal-overlay.is-open { display: flex; }
+  .modal-box {
+    background: #fff; border-radius: 18px; padding: 24px; width: 100%; max-width: 520px;
+    box-shadow: 0 24px 48px rgba(0,0,0,.18); max-height: 90vh; overflow-y: auto;
+  }
+  body[data-theme="dark"] .modal-box { background: #1e293b; }
+  .quick-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  @media (max-width: 1024px) {
+    .ops-grid-top, .detail-grid { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 768px) {
+    .ops-hero, .ticket-summary, .ops-grid-top, .detail-grid, .upload-grid { grid-template-columns: 1fr; display: grid; }
+    .summary-actions { justify-content: flex-start; }
+    .ops-count { width: fit-content; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ops-shell">
+  <section class="ops-hero">
+    <h1 class="ops-title">Operasional Tiket Aktif</h1>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+      <button class="btn btn-primary" type="button" onclick="document.getElementById('modal-add-ticket').classList.add('is-open')">
+        + Tambah Tiket Baru
+      </button>
+      <div class="ops-count">{{ total_tickets }} tiket tampil</div>
+    </div>
+  </section>
+
+  {# ===== MODAL TAMBAH TIKET ===== #}
+  <div class="modal-overlay" id="modal-add-ticket" onclick="if(event.target===this)this.classList.remove('is-open')">
+    <div class="modal-box">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <h2 style="margin:0;font-size:1.2rem;">Tambah Tiket Baru</h2>
+        <button class="btn btn-sm" onclick="document.getElementById('modal-add-ticket').classList.remove('is-open')" type="button">&times;</button>
+      </div>
+      <form method="post" action="{{ url_for('admin.create_ticket') }}" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="ops-form">
+          <div>
+            <label class="form-label-sm" for="new-location">Lokasi</label>
+            <input class="form-control" id="new-location" name="location" type="text" placeholder="Contoh: RUANG PELAYANAN" required>
+          </div>
+          <div>
+            <label class="form-label-sm" for="new-summary">Masalah</label>
+            <input class="form-control" id="new-summary" name="summary" type="text" placeholder="Contoh: Tidak bisa akses layanan" required>
+          </div>
+          <div>
+            <label class="form-label-sm" for="new-category">Kategori</label>
+            <select class="form-control" id="new-category" name="category">
+              <option value="NETWORK">Network</option>
+              <option value="HARDWARE">Hardware</option>
+              <option value="APPLICATION">Application</option>
+              <option value="OTHER">Other</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label-sm" for="new-pelapor">Pelapor</label>
+            <input class="form-control" id="new-pelapor" name="reporter" type="text" placeholder="Nama pelapor" required>
+          </div>
+          <div>
+            <label class="form-label-sm" for="new-attachment">Upload Bukti (opsional)</label>
+            <input class="form-control" id="new-attachment" name="attachment" type="file" accept=".png,.jpg,.jpeg,.webp,.pdf">
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:8px;">
+            <button class="btn btn-sm" type="button" onclick="document.getElementById('modal-add-ticket').classList.remove('is-open')">Batal</button>
+            <button class="btn btn-primary" type="submit">Buat Tiket</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# ===== TIKET AKTIF ===== #}
+  {% if active_tickets %}
+  <div class="section-label">Tiket Aktif</div>
+  <section class="ticket-list">
+    {% for ticket in active_tickets %}
+    <article class="ticket-item">
+      <div class="ticket-summary">
+        <div>
+          <div class="ticket-mainline">tiket {{ ticket.alias }} | {{ ticket.ticket_code }}</div>
+          <div class="ticket-subline">{{ ticket.category_label }} | {{ ticket.lokasi }} | Pelapor: {{ ticket.pelapor }} | Petugas: {{ ticket.petugas }} | Update: {{ ticket.update_terakhir }}</div>
+          <div class="ticket-status-line {{ ticket.status_class }}">{{ ticket.status }}</div>
+        </div>
+        <div class="summary-actions">
+          <button class="btn btn-outline-primary btn-sm detail-toggle" type="button" data-ticket-detail-target="detail-active-{{ loop.index }}" aria-expanded="false">
+            <span class="toggle-label-closed">Detail</span>
+            <span class="toggle-label-open">Tutup</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="ticket-detail" id="detail-active-{{ loop.index }}">
+        <form method="post" action="{{ url_for('admin.edit_ticket', ticket_code=ticket.ticket_code) }}" data-submit-once="true" class="ops-form" enctype="multipart/form-data">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+          <div class="ops-section">
+            <div class="ops-grid-top">
+              <div>
+                <label class="form-label-sm" for="summary-a-{{ loop.index }}">Judul tiket</label>
+                <input class="form-control" id="summary-a-{{ loop.index }}" type="text" name="summary" value="{{ ticket.masalah }}" required>
+              </div>
+              <div>
+                <label class="form-label-sm" for="category-a-{{ loop.index }}">Kategori</label>
+                <select class="form-select" id="category-a-{{ loop.index }}" name="category">
+                  {% for option in [
+                    {'key': 'NETWORK', 'label': 'NETWORK'},
+                    {'key': 'APPLICATION', 'label': 'APPLICATION'},
+                    {'key': 'HARDWARE', 'label': 'HARDWARE'},
+                    {'key': 'OTHER', 'label': 'OTHER'}
+                  ] %}
+                  <option value="{{ option.key }}" {% if ticket.category_key == option.key %}selected{% endif %}>{{ option.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="form-label-sm" for="status-a-{{ loop.index }}">Status</label>
+                <select class="form-select" id="status-a-{{ loop.index }}" name="status">
+                  {% for s in ['OPEN', 'IN_PROGRESS', 'PENDING', 'RESOLVED', 'CLOSED'] %}
+                  <option value="{{ s }}" {% if ticket.status == s %}selected{% endif %}>{{ s }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="ops-section">
+            <div class="ops-grid-note">
+              <div>
+                <label class="form-label-sm" for="note-a-{{ loop.index }}">Catatan / alasan pending</label>
+                <input class="form-control" id="note-a-{{ loop.index }}" type="text" name="note" value="{{ ticket.alasan_pending if ticket.status == 'PENDING' else ticket.catatan if ticket.catatan != '-' else '' }}" placeholder="Wajib diisi jika status PENDING">
+              </div>
+            </div>
+          </div>
+
+          <div class="ops-section">
+            <div class="upload-grid">
+              <div>
+                <label class="form-label-sm" for="edit-upload-a-{{ loop.index }}">Upload bukti (opsional)</label>
+                <input class="form-control" id="edit-upload-a-{{ loop.index }}" type="file" name="attachment" accept=".png,.jpg,.jpeg,.webp,.pdf">
+              </div>
+            </div>
+          </div>
+
+          <div class="ops-section">
+            <div class="detail-grid">
+              <div class="detail-item">
+                <strong>Catatan terakhir</strong>
+                <span>{{ ticket.catatan or '-' }}</span>
+              </div>
+              <div class="detail-item">
+                <strong>Alasan pending</strong>
+                <span>{{ ticket.alasan_pending or '-' }}</span>
+              </div>
+              <div class="detail-item">
+                <strong>Bukti awal</strong>
+                {% if ticket.bukti_awal_links %}
+                <div class="link-list">
+                  {% for link in ticket.bukti_awal_links %}
+                  <a class="btn btn-sm btn-outline-primary" href="{{ link }}" target="_blank" rel="noopener">Bukti awal {{ loop.index }}</a>
+                  {% endfor %}
+                </div>
+                {% else %}<span>-</span>{% endif %}
+              </div>
+              <div class="detail-item">
+                <strong>Bukti selesai</strong>
+                {% if ticket.bukti_resolve_links %}
+                <div class="link-list">
+                  {% for link in ticket.bukti_resolve_links %}
+                  <a class="btn btn-sm btn-outline-success" href="{{ link }}" target="_blank" rel="noopener">Bukti selesai {{ loop.index }}</a>
+                  {% endfor %}
+                </div>
+                {% else %}<span>-</span>{% endif %}
+              </div>
+              <div class="detail-item" style="grid-column: 1 / -1;">
+                <strong>Folder bukti</strong>
+                {% if ticket.folder_bukti_links %}
+                <div class="link-list">
+                  {% for link in ticket.folder_bukti_links %}
+                  <a class="btn btn-sm btn-outline-secondary" href="{{ link }}" target="_blank" rel="noopener">Buka folder bukti</a>
+                  {% endfor %}
+                </div>
+                {% else %}<span>-</span>{% endif %}
+              </div>
+            </div>
+          </div>
+
+          <div class="footer-actions">
+            <button class="btn btn-primary btn-sm" type="submit" data-submit-once-button="true" data-loading-text="Menyimpan...">Simpan</button>
+          </div>
+        </form>
+        <div style="display:flex;justify-content:flex-end;padding-top:8px;">
+          <form method="post" action="{{ url_for('admin.delete_ticket', ticket_code=ticket.ticket_code) }}" onsubmit="return confirm('Hapus tiket {{ ticket.ticket_code }}?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-danger" type="submit">Hapus</button>
+          </form>
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {# ===== TIKET RESOLVED ===== #}
+  {% if resolved_tickets %}
+  <div class="section-label">Tiket Resolved</div>
+  <section class="ticket-list">
+    {% for ticket in resolved_tickets %}
+    <article class="ticket-item">
+      <div class="ticket-summary">
+        <div>
+          <div class="ticket-mainline">tiket {{ ticket.alias }} | {{ ticket.ticket_code }}</div>
+          <div class="ticket-subline">{{ ticket.category_label }} | {{ ticket.lokasi }} | Pelapor: {{ ticket.pelapor }} | Petugas: {{ ticket.petugas }} | Update: {{ ticket.update_terakhir }}</div>
+          <div class="ticket-status-line {{ ticket.status_class }}">{{ ticket.status }}</div>
+        </div>
+        <div class="summary-actions">
+          <button class="btn btn-outline-success btn-sm detail-toggle" type="button" data-ticket-detail-target="detail-resolved-{{ loop.index }}" aria-expanded="false">
+            <span class="toggle-label-closed">Detail</span>
+            <span class="toggle-label-open">Tutup</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="ticket-detail" id="detail-resolved-{{ loop.index }}">
+        <div class="ops-form">
+          <div class="ops-section">
+            <div class="detail-grid">
+              <div class="detail-item">
+                <strong>Judul tiket</strong>
+                <span>{{ ticket.masalah }}</span>
+              </div>
+              <div class="detail-item">
+                <strong>Catatan terakhir</strong>
+                <span>{{ ticket.catatan or '-' }}</span>
+              </div>
+              <div class="detail-item">
+                <strong>Bukti awal</strong>
+                {% if ticket.bukti_awal_links %}
+                <div class="link-list">
+                  {% for link in ticket.bukti_awal_links %}
+                  <a class="btn btn-sm btn-outline-primary" href="{{ link }}" target="_blank" rel="noopener">Bukti awal {{ loop.index }}</a>
+                  {% endfor %}
+                </div>
+                {% else %}<span>-</span>{% endif %}
+              </div>
+              <div class="detail-item">
+                <strong>Bukti selesai</strong>
+                {% if ticket.bukti_resolve_links %}
+                <div class="link-list">
+                  {% for link in ticket.bukti_resolve_links %}
+                  <a class="btn btn-sm btn-outline-success" href="{{ link }}" target="_blank" rel="noopener">Bukti selesai {{ loop.index }}</a>
+                  {% endfor %}
+                </div>
+                {% else %}<span>-</span>{% endif %}
+              </div>
+              <div class="detail-item" style="grid-column: 1 / -1;">
+                <strong>Folder bukti</strong>
+                {% if ticket.folder_bukti_links %}
+                <div class="link-list">
+                  {% for link in ticket.folder_bukti_links %}
+                  <a class="btn btn-sm btn-outline-secondary" href="{{ link }}" target="_blank" rel="noopener">Buka folder bukti</a>
+                  {% endfor %}
+                </div>
+                {% else %}<span>-</span>{% endif %}
+              </div>
+            </div>
+          </div>
+
+          <div class="ops-section">
+            <form method="post" action="{{ url_for('admin.edit_ticket', ticket_code=ticket.ticket_code) }}" enctype="multipart/form-data" class="ops-form" data-submit-once="true">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="summary" value="{{ ticket.masalah }}">
+              <input type="hidden" name="category" value="{{ ticket.category_key }}">
+              <input type="hidden" name="status" value="{{ ticket.status }}">
+              <input type="hidden" name="note" value="{{ ticket.catatan if ticket.catatan != '-' else '' }}">
+              <div class="upload-grid">
+                <div>
+                  <label class="form-label-sm" for="resolved-upload-{{ loop.index }}">Upload bukti selesai</label>
+                  <input class="form-control" id="resolved-upload-{{ loop.index }}" type="file" name="attachment" accept=".png,.jpg,.jpeg,.webp,.pdf">
+                </div>
+                <div>
+                  <button class="btn btn-success btn-sm" type="submit" data-submit-once-button="true" data-loading-text="Uploading...">Upload Bukti</button>
+                </div>
+              </div>
+            </form>
+          </div>
+
+          <div class="quick-actions" style="justify-content:flex-end;">
+            {% if ticket.status != 'CLOSED' %}
+            <form method="post" action="{{ url_for('admin.edit_ticket', ticket_code=ticket.ticket_code) }}" style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="summary" value="{{ ticket.masalah }}">
+              <input type="hidden" name="category" value="{{ ticket.category_key }}">
+              <input type="hidden" name="status" value="CLOSED">
+              <input type="hidden" name="note" value="Closed by admin">
+              <button class="btn btn-sm btn-dark" type="submit" onclick="return confirm('Tutup tiket {{ ticket.ticket_code }}?')">Closed</button>
+            </form>
+            {% else %}
+            <span class="badge bg-dark">CLOSED</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {% if not active_tickets and not resolved_tickets %}
+  <div class="empty-state">Belum ada tiket aktif atau resolved yang terbaca dari sumber incident.</div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_body %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('[data-ticket-detail-target]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        var targetId = button.getAttribute('data-ticket-detail-target');
+        var panel = document.getElementById(targetId);
+        if (!panel) return;
+        var isOpen = panel.classList.toggle('is-open');
+        button.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      });
+    });
+  });
+</script>
+{% endblock %}
