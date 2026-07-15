@@ -42,3 +42,8 @@ Fitur operasional:
 - Drive Token Guard di menu `Operasional Tiket` untuk memantau kesiapan token Google Drive.
 - Jika upload bukti gagal karena Drive/token, bukti dicatat sebagai `pending_evidence` lokal dan bisa di-retry.
 - Menu `Riwayat Tiket` menampilkan histori update dari database incident live dan mendukung pencarian seperti `tiket 2`.
+
+Pembaruan token Google Drive:
+- Prosedur lengkap tersedia di `docs/04-instal-incident-portal.md` bagian `Pembaharuan Token Google Drive`.
+- Ringkasnya: jalankan `reauth_google_drive.py auth-url`, buka URL Google, salin callback `localhost`, lalu jalankan `reauth_google_drive.py exchange 'URL_CALLBACK'`.
+- Jangan commit file token atau client secret ke git.
