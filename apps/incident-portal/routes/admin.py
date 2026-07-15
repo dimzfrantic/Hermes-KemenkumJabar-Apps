@@ -14,7 +14,7 @@ from flask_login import current_user, login_required
 from sqlalchemy import or_, func
 
 from extensions import db
-from models import PortalTicket, User
+from models import PendingEvidence, PortalTicket, User
 from services.employee_import import import_employees_from_excel
 from services.incident_cache import parse_portal_datetime
 from services.incident_gateway import (
@@ -25,8 +25,9 @@ from services.incident_gateway import (
     load_incident_module,
 )
 from services.incident_admin_store import get_dashboard_records, sync_state_summary
-from services.incident_store import get_all_incidents, get_conn, get_record, split_links, sync_portal_ticket_from_db
+from services.incident_store import get_all_incidents, get_conn, get_history, get_record, split_links, sync_portal_ticket_from_db
 from services.incident_recap import build_report_dataset, default_filter_values, export_excel, export_pdf, parse_filters
+from services.drive_guard import check_drive_health, create_pending_evidence, pending_count, pending_rows, retry_pending_evidence
 from services.telegram_notifier import send_new_ticket_notification
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
@@ -499,7 +500,41 @@ def active_tickets():
         active_tickets=active_tickets,
         resolved_tickets=resolved_tickets,
         total_tickets=len(active_tickets) + len(resolved_tickets),
+        drive_health=check_drive_health(),
+        pending_evidence_count=pending_count(),
+        pending_evidence_rows=pending_rows(limit=8),
     )
+
+
+@admin_bp.route('/drive-guard/retry', methods=['POST'])
+@login_required
+@admin_required
+def retry_drive_pending():
+    health = check_drive_health()
+    if not health.get('ok'):
+        flash(f"Google Drive belum siap: {health.get('message')}", 'danger')
+        return redirect(url_for('admin.active_tickets'))
+    results = retry_pending_evidence(limit=50)
+    success_count = sum(1 for item in results if item.get('ok'))
+    fail_count = len(results) - success_count
+    if success_count:
+        flash(f'{success_count} bukti pending berhasil diupload ulang.', 'success')
+    if fail_count:
+        flash(f'{fail_count} bukti pending masih gagal. Cek status Drive Guard.', 'warning')
+    if not results:
+        flash('Tidak ada bukti pending untuk di-retry.', 'info')
+    return redirect(url_for('admin.active_tickets'))
+
+
+@admin_bp.route('/drive-guard/status')
+@login_required
+@admin_required
+def drive_guard_status():
+    return jsonify({
+        'ok': True,
+        'drive': check_drive_health(),
+        'pending_count': pending_count(),
+    })
 
 
 @admin_bp.route('/tickets/<ticket_code>/delete', methods=['POST'])
@@ -511,7 +546,7 @@ def delete_ticket(ticket_code):
         flash('Kode tiket tidak valid.', 'danger')
         return redirect(url_for('admin.active_tickets'))
 
-    incident_module = _load_incident_module()
+    incident_module = load_incident_module()
     args = SimpleNamespace(ticket=normalized_code)
     response_text = str(incident_module.cmd_delete(args) or '').strip()
     if response_text.startswith('[ERROR]'):
@@ -575,6 +610,7 @@ def edit_ticket(ticket_code):
             return redirect(url_for('admin.active_tickets'))
 
     try:
+        upload_pending = False
         prefix = portal_category_prefix(category_key)
         parts = old_code.split('-')
         if len(parts) != 3:
@@ -598,9 +634,29 @@ def edit_ticket(ticket_code):
         )
         response_text = str(incident_module.cmd_update(args) or '').strip()
         if response_text.startswith('[ERROR]'):
-            raise ValueError(response_text)
+            upload_failed = bool(bukti_files) and ('Upload bukti' in response_text or 'Google Drive' in response_text or 'Token/akses' in response_text)
+            if upload_failed:
+                evidence_kind = 'bukti_resolve' if is_terminal else 'bukti_awal'
+                create_pending_evidence(
+                    ticket_code=new_code,
+                    status_label=status,
+                    evidence_kind=evidence_kind,
+                    file_paths=bukti_files,
+                    note=note or f"Status diubah ke {status} oleh {current_user.full_name or 'Admin Portal'}",
+                    error_message=response_text,
+                    created_by=current_user.full_name or 'Admin Portal',
+                )
+                args.bukti_awal_files = []
+                args.bukti_resolve_files = []
+                response_text = str(incident_module.cmd_update(args) or '').strip()
+                if response_text.startswith('[ERROR]'):
+                    raise ValueError(response_text)
+                upload_pending = True
+                flash('Bukti belum terkirim ke Google Drive dan disimpan sebagai pending upload. Silakan retry setelah token Drive valid.', 'warning')
+            else:
+                raise ValueError(response_text)
 
-        if bukti_files:
+        if bukti_files and not upload_pending:
             import re as _re
             bukti_field = 'bukti_resolve' if is_terminal else 'bukti_awal'
             bukti_match = _re.search(rf'{("Bukti selesai" if is_terminal else "Bukti awal")}:\s*(https?://\S+)', response_text)
@@ -716,6 +772,76 @@ def create_ticket():
 
     db.session.commit()
     return redirect(url_for('admin.active_tickets'))
+
+
+@admin_bp.route('/history')
+@login_required
+@admin_required
+def ticket_history():
+    query_text = ' '.join(str(request.args.get('q') or '').split())
+    status_filter = str(request.args.get('status') or '').strip().upper()
+    ticket_filter = str(request.args.get('ticket') or '').strip().upper()
+    try:
+        active_rows, archive_rows = get_all_incidents(include_archive=True)
+        incident_map = {str(row.get('ticket_code') or '').upper(): row for row in active_rows + archive_rows}
+        history_rows = get_history(ticket_filter or None)
+    except Exception as exc:
+        flash(f'Riwayat tiket belum bisa dimuat: {exc}', 'danger')
+        incident_map = {}
+        history_rows = []
+
+    normalized_q = query_text.lower()
+    filtered_rows = []
+    for row in history_rows:
+        ticket_code_value = str(row.get('ticket_code') or '').upper()
+        incident = incident_map.get(ticket_code_value, {})
+        if status_filter and str(row.get('status_after') or '').upper() != status_filter:
+            continue
+        if normalized_q:
+            alias_value = str(row.get('alias') or '').strip()
+            ticket_alias_label = f'tiket {alias_value}' if alias_value else ''
+            ticket_alias_compact = f'tiket{alias_value}' if alias_value else ''
+            haystack = ' '.join(str(value or '') for value in [
+                ticket_code_value,
+                alias_value,
+                ticket_alias_label,
+                ticket_alias_compact,
+                row.get('action'),
+                row.get('status_before'),
+                row.get('status_after'),
+                row.get('ditangani_oleh'),
+                row.get('catatan_terakhir'),
+                row.get('catatan'),
+                incident.get('lokasi'),
+                incident.get('masalah'),
+                incident.get('pelapor'),
+            ]).lower()
+            normalized_q_compact = normalized_q.replace(' ', '')
+            if normalized_q not in haystack and normalized_q_compact not in haystack.replace(' ', ''):
+                continue
+        filtered_rows.append({
+            **row,
+            'incident': incident,
+            'bukti_baru_links': split_links(row.get('bukti_baru') or ''),
+            'bukti_awal_links': split_links(row.get('bukti_awal') or ''),
+            'bukti_resolve_links': split_links(row.get('bukti_resolve') or ''),
+            'folder_bukti_links': split_links(row.get('folder_bukti') or ''),
+        })
+
+    filtered_rows = list(reversed(filtered_rows))
+    total_rows = len(filtered_rows)
+    limit = min(max(request.args.get('limit', default=100, type=int), 25), 500)
+    shown_rows = filtered_rows[:limit]
+    return render_template(
+        'admin_ticket_history.html',
+        history_rows=shown_rows,
+        total_rows=total_rows,
+        limit=limit,
+        query_text=query_text,
+        status_filter=status_filter,
+        ticket_filter=ticket_filter,
+        status_options=['OPEN', 'IN_PROGRESS', 'PENDING', 'RESOLVED', 'CLOSED'],
+    )
 
 
 @admin_bp.route('/recap')

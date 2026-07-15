@@ -34,6 +34,29 @@ class User(UserMixin, db.Model):
     def check_password(self, password: str) -> bool:
         return check_password_hash(self.password_hash, password)
 
+class PendingEvidence(db.Model):
+    __tablename__ = 'pending_evidence'
+
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_code = db.Column(db.String(64), nullable=False, index=True)
+    status_label = db.Column(db.String(32), nullable=False, default='OPEN')
+    evidence_kind = db.Column(db.String(32), nullable=False, default='bukti_awal')
+    file_path = db.Column(db.String(500), nullable=False)
+    source_filename = db.Column(db.String(255), nullable=True)
+    note = db.Column(db.Text, nullable=True)
+    error_message = db.Column(db.Text, nullable=True)
+    retry_count = db.Column(db.Integer, default=0, nullable=False)
+    uploaded_url = db.Column(db.Text, nullable=True)
+    resolved_at = db.Column(db.DateTime, nullable=True)
+    created_by = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    @property
+    def is_pending(self):
+        return not bool(self.resolved_at)
+
+
 class PortalTicket(db.Model):
     __tablename__ = 'portal_tickets'
 

@@ -97,6 +97,43 @@
     </div>
   </section>
 
+  <section class="ops-section" style="margin-bottom:16px;">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
+      <div>
+        <div class="section-label" style="margin:0 0 6px;">Drive Token Guard</div>
+        {% if drive_health and drive_health.ok %}
+        <div class="text-success fw-bold">Google Drive siap digunakan{% if drive_health.account %} · {{ drive_health.account }}{% endif %}</div>
+        {% else %}
+        <div class="text-danger fw-bold">Google Drive perlu perhatian</div>
+        <div class="text-muted small">{{ drive_health.message if drive_health else 'Status Drive belum tersedia.' }}</div>
+        {% endif %}
+        <div class="text-muted small">Pending upload: {{ pending_evidence_count or 0 }} bukti</div>
+      </div>
+      <form method="post" action="{{ url_for('admin.retry_drive_pending') }}" data-submit-once="true">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-sm btn-primary" type="submit" data-submit-once-button="true" data-loading-text="Retrying..." {% if not pending_evidence_count %}disabled{% endif %}>Retry bukti pending</button>
+      </form>
+    </div>
+    {% if pending_evidence_rows %}
+    <div class="table-responsive mt-3">
+      <table class="table table-sm align-middle mb-0">
+        <thead><tr><th>Tiket</th><th>Jenis</th><th>File</th><th>Retry</th><th>Error terakhir</th></tr></thead>
+        <tbody>
+          {% for row in pending_evidence_rows %}
+          <tr>
+            <td>{{ row.ticket_code }}</td>
+            <td>{{ row.evidence_kind }}</td>
+            <td>{{ row.source_filename or row.file_path }}</td>
+            <td>{{ row.retry_count }}</td>
+            <td class="text-muted small">{{ row.error_message or '-' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </section>
+
   {# ===== MODAL TAMBAH TIKET ===== #}
   <div class="modal-overlay" id="modal-add-ticket" onclick="if(event.target===this)this.classList.remove('is-open')">
     <div class="modal-box">

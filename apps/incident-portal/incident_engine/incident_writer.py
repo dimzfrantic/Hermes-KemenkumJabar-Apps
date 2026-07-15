@@ -83,14 +83,14 @@ ARCHIVE_HEADERS = [
     'source_sheet'
 ]
 
-CREDS_PATH = Path('/home/ubnt/.hermes/google_token.json')
+CREDS_PATH = Path(os.environ.get('GOOGLE_TOKEN_PATH', str(Path.home() / '.hermes' / 'google_token.json')))
 HERMES_HOME = CREDS_PATH.parent
 HERMES_IMAGE_CACHE_DIRS = [
     HERMES_HOME / 'cache' / 'images',
     HERMES_HOME / 'image_cache',
 ]
-BUKTI_ROOT_FOLDER_ID = '1nrA72hXkQT1pQ0SVbeCSftDohcs-OdEh'
-BUKTI_ROOT_FOLDER_LINK = f'https://drive.google.com/drive/folders/{BUKTI_ROOT_FOLDER_ID}'
+BUKTI_ROOT_FOLDER_ID = os.environ.get('BUKTI_ROOT_FOLDER_ID', '').strip()
+BUKTI_ROOT_FOLDER_LINK = f'https://drive.google.com/drive/folders/{BUKTI_ROOT_FOLDER_ID}' if BUKTI_ROOT_FOLDER_ID else ''
 # ============== END CONFIG ==============
 
 def refresh_dashboard_sheet():
@@ -1443,6 +1443,15 @@ def cmd_update(args):
         bukti_resolve = merge_link_values(bukti_resolve, uploaded_bukti_resolve)
     except Exception as exc:
         folder_bukti_error = folder_bukti_error or str(exc)
+    requested_bukti_awal_files = getattr(args, 'bukti_awal_files', []) or []
+    requested_bukti_resolve_files = getattr(args, 'bukti_resolve_files', []) or []
+    if requested_bukti_awal_files and not uploaded_bukti_awal:
+        detail = 'Token/akses Google Drive perlu diperbarui.' if 'invalid_grant' in str(folder_bukti_error) else (folder_bukti_error or 'tidak ada link bukti yang berhasil dibuat')
+        return '[ERROR] Upload bukti awal gagal: ' + detail
+    if requested_bukti_resolve_files and not uploaded_bukti_resolve:
+        detail = 'Token/akses Google Drive perlu diperbarui.' if 'invalid_grant' in str(folder_bukti_error) else (folder_bukti_error or 'tidak ada link bukti yang berhasil dibuat')
+        return '[ERROR] Upload bukti selesai gagal: ' + detail
+
     pending_reason = note if new_status == 'PENDING' else ''
     catatan_terakhir = pending_reason if new_status == 'PENDING' and pending_reason else note
     if new_status == 'IN_PROGRESS' and handled_by and (not note or note.lower() == handled_by.lower()):

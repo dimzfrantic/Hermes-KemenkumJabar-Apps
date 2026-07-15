@@ -37,3 +37,8 @@ Cara jalan lokal:
 Catatan:
 - source utama incident engine tidak lagi berada di folder terpisah `apps/incidents/`
 - installer engine tetap tersedia, tetapi targetnya sekarang `apps/incident-portal/incident_engine/`
+
+Fitur operasional:
+- Drive Token Guard di menu `Operasional Tiket` untuk memantau kesiapan token Google Drive.
+- Jika upload bukti gagal karena Drive/token, bukti dicatat sebagai `pending_evidence` lokal dan bisa di-retry.
+- Menu `Riwayat Tiket` menampilkan histori update dari database incident live dan mendukung pencarian seperti `tiket 2`.

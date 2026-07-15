@@ -53,3 +53,15 @@ Verifikasi integrasi
 - status tiket dapat dibaca kembali
 - upload bukti berjalan
 - notifikasi grup bekerja bila diaktifkan
+
+Fitur operasional
+- `Admin > Operasional Tiket` menampilkan panel Drive Token Guard.
+- Panel ini mengecek kesiapan token Google Drive dan jumlah bukti pending.
+- Jika upload bukti gagal karena token Drive, file tetap dicatat sebagai pending evidence lokal.
+- Setelah token valid, admin dapat menekan tombol retry bukti pending.
+- `Admin > Riwayat Tiket` menampilkan histori update tiket dari database incident live dan mendukung pencarian alias seperti `tiket 2`.
+
+Env terkait Google Drive
+- `GOOGLE_TOKEN_PATH` menunjuk token OAuth Drive.
+- `GOOGLE_CLIENT_SECRET_PATH` disimpan manual di server, jangan commit ke git.
+- `BUKTI_ROOT_FOLDER_ID` menunjuk folder induk bukti Drive.
