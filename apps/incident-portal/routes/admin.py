@@ -829,17 +829,45 @@ def ticket_history():
         })
 
     filtered_rows = list(reversed(filtered_rows))
-    total_rows = len(filtered_rows)
+    detail_ticket = str(request.args.get('detail') or '').strip().upper()
+
+    grouped = {}
+    for row in filtered_rows:
+        code = str(row.get('ticket_code') or '').upper()
+        if not code:
+            continue
+        item = grouped.setdefault(code, {
+            'ticket_code': code,
+            'alias': row.get('alias') or '-',
+            'incident': row.get('incident') or {},
+            'latest_status': row.get('status_after') or '-',
+            'latest_update_time': row.get('update_time') or '-',
+            'latest_note': row.get('catatan_terakhir') or row.get('catatan') or '-',
+            'history': [],
+        })
+        item['history'].append(row)
+        if row.get('update_time'):
+            item['latest_update_time'] = row.get('update_time')
+        if row.get('status_after'):
+            item['latest_status'] = row.get('status_after')
+        if row.get('catatan_terakhir') or row.get('catatan'):
+            item['latest_note'] = row.get('catatan_terakhir') or row.get('catatan')
+
+    ticket_rows = list(grouped.values())
+    total_rows = len(ticket_rows)
     limit = min(max(request.args.get('limit', default=100, type=int), 25), 500)
-    shown_rows = filtered_rows[:limit]
+    shown_rows = ticket_rows[:limit]
+    selected_ticket = grouped.get(detail_ticket) if detail_ticket else None
     return render_template(
         'admin_ticket_history.html',
-        history_rows=shown_rows,
+        ticket_rows=shown_rows,
+        selected_ticket=selected_ticket,
         total_rows=total_rows,
         limit=limit,
         query_text=query_text,
         status_filter=status_filter,
         ticket_filter=ticket_filter,
+        detail_ticket=detail_ticket,
         status_options=['OPEN', 'IN_PROGRESS', 'PENDING', 'RESOLVED', 'CLOSED'],
     )
 
