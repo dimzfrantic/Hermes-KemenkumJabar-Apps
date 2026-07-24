@@ -11,6 +11,19 @@ from extensions import db, login_manager
 from models import AdminUser
 
 
+SCHEMA_COLUMNS = {
+    'generation_jobs': {
+        'photo_column': 'VARCHAR(255)',
+    },
+    'auto_certificate_events': {
+        'photo_column': 'VARCHAR(255)',
+    },
+    'auto_certificate_items': {
+        'photo_url': 'TEXT',
+    },
+}
+
+
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
@@ -58,6 +71,7 @@ def create_app():
 
     with app.app_context():
         db.create_all()
+        ensure_schema_columns()
         ensure_admin_user(app)
 
     return app
@@ -81,6 +95,16 @@ def configure_logging(app):
         app.logger.addHandler(file_handler)
 
     app.logger.setLevel(logging.INFO)
+
+
+def ensure_schema_columns():
+    with db.engine.connect() as connection:
+        for table_name, columns in SCHEMA_COLUMNS.items():
+            existing = {row[1] for row in connection.exec_driver_sql(f'PRAGMA table_info({table_name})')}
+            for column_name, column_type in columns.items():
+                if column_name not in existing:
+                    connection.exec_driver_sql(f'ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}')
+        connection.commit()
 
 
 def ensure_admin_user(app):

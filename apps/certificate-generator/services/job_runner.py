@@ -11,6 +11,7 @@ from flask import current_app
 
 from extensions import db
 from models import GenerationJob, JobRowResult
+from services.certificate_photos import PHOTO_PLACEHOLDER, prepare_certificate_photo
 from services.excel_parser import load_participants
 from services.google_drive import upload_pdf_with_config
 from services.pptx_generator import convert_pptx_to_pdf_with_soffice, replace_placeholders
@@ -134,6 +135,7 @@ def _process_participant(
     row_number: int,
     name: str,
     institution: str,
+    photo_ref: str,
     retry_count: int,
     google_token_path: str,
     drive_scopes: list[str],
@@ -144,11 +146,28 @@ def _process_participant(
     for attempt in range(retry_count + 1):
         pptx_path = runtime_root / f'{uuid4().hex}-{base_name}.pptx'
         pdf_path = runtime_root / f'{pptx_path.stem}.pdf'
+        photo_path = None
         try:
-            replace_placeholders(template_path, str(pptx_path), {
-                '{{nama}}': name,
-                '{{instansi}}': institution,
-            })
+            image_replacements = {}
+            photo_path = prepare_certificate_photo(
+                photo_ref,
+                runtime_root,
+                google_token_path=google_token_path,
+                drive_scopes=drive_scopes,
+                row_number=row_number,
+                use_cached_service=True,
+            ) if photo_ref else None
+            if photo_path:
+                image_replacements[PHOTO_PLACEHOLDER] = photo_path
+            replace_placeholders(
+                template_path,
+                str(pptx_path),
+                {
+                    '{{nama}}': name,
+                    '{{instansi}}': institution,
+                },
+                image_replacements=image_replacements,
+            )
             actual_pdf_path = convert_pptx_to_pdf_with_soffice(str(pptx_path), str(runtime_root), soffice_path)
             filename = f'{base_name}.pdf'
             upload_result = upload_pdf_with_config(
@@ -159,7 +178,7 @@ def _process_participant(
                 drive_scopes,
                 use_cached_service=True,
             )
-            remove_files([pptx_path, actual_pdf_path])
+            remove_files([pptx_path, actual_pdf_path, photo_path])
             return {
                 'ok': True,
                 'row_number': row_number,
@@ -173,7 +192,7 @@ def _process_participant(
             }
         except Exception as exc:
             last_error = str(exc)
-            remove_files([pptx_path, pdf_path])
+            remove_files([pptx_path, pdf_path, photo_path])
     return {
         'ok': False,
         'row_number': row_number,
@@ -237,6 +256,7 @@ def _run_generation(app, job_id: int, template_path: str, workbook_path: str):
                     continue
                 name = (row.get(job.name_column) or '').strip()
                 institution = (row.get(job.institution_column) or '').strip()
+                photo_ref = (row.get(job.photo_column) or '').strip() if job.photo_column else ''
                 if not name or not institution:
                     _record_row_result(job, {
                         'ok': False,
@@ -247,7 +267,7 @@ def _run_generation(app, job_id: int, template_path: str, workbook_path: str):
                         'message': 'Nama atau instansi kosong.',
                     })
                     continue
-                participants.append((row_number, name, institution))
+                participants.append((row_number, name, institution, photo_ref))
 
             runtime_root = ensure_dir(Path(current_app.config['RUNTIME_DIR']) / job.job_uuid)
             max_workers = max(1, int(current_app.config.get('MAX_PARALLEL_WORKERS', 3)))
@@ -264,7 +284,7 @@ def _run_generation(app, job_id: int, template_path: str, workbook_path: str):
 
                 def submit_next() -> bool:
                     try:
-                        row_number, name, institution = next(participant_iter)
+                        row_number, name, institution, photo_ref = next(participant_iter)
                     except StopIteration:
                         return False
                     future = executor.submit(
@@ -275,6 +295,7 @@ def _run_generation(app, job_id: int, template_path: str, workbook_path: str):
                         row_number,
                         name,
                         institution,
+                        photo_ref,
                         retry_count,
                         google_token_path,
                         drive_scopes,

@@ -148,6 +148,16 @@
               {% endfor %}
             </select>
           </div>
+          <div class="col-md-4">
+            <label class="form-label">Kolom Foto → {{ '{{foto}}' }} <span class="text-muted">(opsional)</span></label>
+            <select class="form-select" name="photo_column">
+              <option value="">Tanpa foto</option>
+              {% for header in workbook_headers or [] %}
+              <option value="{{ header }}" {% if (selected_photo_column or request.form.get('photo_column')) == header %}selected{% endif %}>{{ header }}</option>
+              {% endfor %}
+            </select>
+            <div class="small-muted mt-2">Isi kolom dapat berupa link file Google Drive, hasil upload Google Form, atau path file lokal di server.</div>
+          </div>
         </div>
       </div>
       {% else %}

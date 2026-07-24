@@ -113,8 +113,58 @@ def _replace_in_shape(shape, replacements: dict[str, str]):
                 _replace_paragraph_text_preserve_style(paragraph, updated)
 
 
-def replace_placeholders(input_pptx: str, output_pptx: str, replacements: dict[str, str]):
+def _delete_shape(shape):
+    element = shape._element
+    element.getparent().remove(element)
+
+
+def _apply_center_crop(picture, image_path: str, box_width, box_height):
+    try:
+        with Image.open(image_path) as img:
+            image_width, image_height = img.size
+    except Exception:
+        return
+    if not image_width or not image_height or not box_width or not box_height:
+        return
+    image_ratio = image_width / image_height
+    box_ratio = int(box_width) / int(box_height)
+    if image_ratio > box_ratio:
+        crop = max(0, min(0.49, (1 - (box_ratio / image_ratio)) / 2))
+        picture.crop_left = crop
+        picture.crop_right = crop
+    elif image_ratio < box_ratio:
+        crop = max(0, min(0.49, (1 - (image_ratio / box_ratio)) / 2))
+        picture.crop_top = crop
+        picture.crop_bottom = crop
+
+
+def _replace_image_placeholders(prs: Presentation, image_replacements: dict[str, str]):
+    normalized = {token: str(path) for token, path in (image_replacements or {}).items() if path and Path(str(path)).exists()}
+    if not normalized:
+        return
+    for slide in prs.slides:
+        for shape in list(slide.shapes):
+            if not getattr(shape, 'has_text_frame', False):
+                continue
+            text = shape.text or ''
+            matched_token = next((token for token in normalized if token in text), None)
+            if not matched_token:
+                continue
+            image_path = normalized[matched_token]
+            left, top, width, height = shape.left, shape.top, shape.width, shape.height
+            _delete_shape(shape)
+            picture = slide.shapes.add_picture(image_path, left, top, width=width, height=height)
+            _apply_center_crop(picture, image_path, width, height)
+
+
+def replace_placeholders(
+    input_pptx: str,
+    output_pptx: str,
+    replacements: dict[str, str],
+    image_replacements: dict[str, str] | None = None,
+):
     prs = Presentation(input_pptx)
+    _replace_image_placeholders(prs, image_replacements or {})
     normalized = _normalize_replacements(replacements)
     for slide in prs.slides:
         for shape in slide.shapes:

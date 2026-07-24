@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import re
 import socket
 import threading
 import time
@@ -9,7 +10,7 @@ from pathlib import Path
 from flask import current_app
 from google.auth.exceptions import TransportError
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload
+from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload, MediaIoBaseUpload
 from httplib2.error import ServerNotFoundError
 
 from services.google_auth import ensure_required_scopes, load_authorized_user_credentials
@@ -143,6 +144,62 @@ def upload_pdf(file_path: str, folder_id: str, display_name: str) -> dict:
         file_path,
         folder_id,
         display_name,
+        current_app.config['GOOGLE_TOKEN_PATH'],
+        current_app.config['DRIVE_SCOPES'],
+    )
+
+
+def extract_drive_file_id(value: str | None) -> str | None:
+    text = (value or '').strip()
+    if not text:
+        return None
+    patterns = [
+        r'/file/d/([a-zA-Z0-9_-]+)',
+        r'[?&]id=([a-zA-Z0-9_-]+)',
+        r'open\?id=([a-zA-Z0-9_-]+)',
+        r'uc\?id=([a-zA-Z0-9_-]+)',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1)
+    # Google Forms upload cells can contain one or more bare Drive URLs. If the
+    # cell is already a raw file id, accept it cautiously.
+    if re.fullmatch(r'[a-zA-Z0-9_-]{20,}', text):
+        return text
+    return None
+
+
+def download_drive_file_with_config(
+    file_ref: str,
+    output_path: str,
+    token_path: str,
+    scopes: list[str],
+    drive_service=None,
+    use_cached_service: bool = False,
+) -> str:
+    file_id = extract_drive_file_id(file_ref)
+    if not file_id:
+        raise DriveConfigurationError('Link/ID foto peserta tidak dikenali.')
+    service = drive_service or get_drive_service_from_config(token_path, scopes, use_cache=use_cached_service)
+    target = Path(output_path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        request = service.files().get_media(fileId=file_id)
+        with target.open('wb') as handle:
+            downloader = MediaIoBaseDownload(handle, request)
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+        return str(target)
+    except ServerNotFoundError as exc:
+        raise TransportError(f'Gagal download foto dari Google Drive API: {exc}') from exc
+
+
+def download_drive_file(file_ref: str, output_path: str) -> str:
+    return download_drive_file_with_config(
+        file_ref,
+        output_path,
         current_app.config['GOOGLE_TOKEN_PATH'],
         current_app.config['DRIVE_SCOPES'],
     )

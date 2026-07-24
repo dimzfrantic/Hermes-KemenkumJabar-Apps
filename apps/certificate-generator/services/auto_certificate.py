@@ -16,6 +16,7 @@ from sqlalchemy.exc import OperationalError
 
 from extensions import db
 from models import AutoCertificateEvent, AutoCertificateItem, AutoCertificateRun
+from services.certificate_photos import PHOTO_PLACEHOLDER, prepare_certificate_photo
 from services.google_drive import DriveConfigurationError, upload_pdf_with_config
 from services.google_sheets import ParsedSheet, SheetConfigurationError, fetch_form_rows
 from services.pptx_generator import build_pdf_safe_template, convert_pptx_to_pdf_with_soffice, replace_placeholders
@@ -96,6 +97,7 @@ HEADER_ALIASES = {
     'institution': ['asalinstansi', 'instansi', 'unitkerja', 'satker'],
     'phone': ['nomorwa', 'wa', 'nomorwa', 'nohp', 'noh p', 'telepon', 'nohpwa'],
     'timestamp': ['timestamp', 'stempelwaktu', 'waktu', 'tanggalwaktu'],
+    'photo': ['foto', 'photo', 'pasfoto', 'uploadfoto', 'unggahfoto', 'filefoto', 'linkfoto', 'fotopeserta'],
 }
 
 
@@ -117,7 +119,7 @@ def validate_event_configuration(parsed: ParsedSheet, template_path: str) -> dic
     build_pdf_safe_template(
         template_path,
         str(safe_template_path),
-        placeholders=['{{nama}}'],
+        placeholders=['{{nama}}', PHOTO_PLACEHOLDER],
         working_dir=str(preview_root / 'build'),
         soffice_path=current_app.config.get('SOFFICE_PATH', ''),
     )
@@ -210,7 +212,7 @@ def _prepare_event_template(event: AutoCertificateEvent) -> Path:
         build_pdf_safe_template(
             str(template_original),
             str(template_safe),
-            placeholders=['{{nama}}'],
+            placeholders=['{{nama}}', PHOTO_PLACEHOLDER],
             working_dir=str(event_root / '_safe_build'),
             soffice_path=current_app.config.get('SOFFICE_PATH', ''),
             cleanup_working_dir=True,
@@ -228,8 +230,25 @@ def _generate_item_certificate(event: AutoCertificateEvent, item: AutoCertificat
             base_name = slugify_filename(f'{base_name} - {safe_stamp}', default=base_name)
     pptx_path = runtime_root / f'{uuid4().hex}-{base_name}.pptx'
     pdf_path = runtime_root / f'{pptx_path.stem}.pdf'
+    photo_path = None
     try:
-        replace_placeholders(template_safe_path, str(pptx_path), {'{{nama}}': normalized_name})
+        image_replacements = {}
+        photo_path = prepare_certificate_photo(
+            item.photo_url,
+            runtime_root,
+            google_token_path=current_app.config['GOOGLE_TOKEN_PATH'],
+            drive_scopes=list(current_app.config['DRIVE_SCOPES']),
+            row_number=item.source_row_number,
+            use_cached_service=True,
+        ) if item.photo_url else None
+        if photo_path:
+            image_replacements[PHOTO_PLACEHOLDER] = photo_path
+        replace_placeholders(
+            template_safe_path,
+            str(pptx_path),
+            {'{{nama}}': normalized_name},
+            image_replacements=image_replacements,
+        )
         actual_pdf = convert_pptx_to_pdf_with_soffice(str(pptx_path), str(runtime_root), current_app.config.get('SOFFICE_PATH', ''))
         filename = f'{base_name}.pdf'
         upload_result = upload_pdf_with_config(
@@ -248,7 +267,7 @@ def _generate_item_certificate(event: AutoCertificateEvent, item: AutoCertificat
             'message': 'Upload berhasil.',
         }
     finally:
-        remove_files([pptx_path, pdf_path])
+        remove_files([pptx_path, pdf_path, photo_path])
         remove_dir(runtime_root / '_soffice_profiles')
 
 
@@ -285,6 +304,8 @@ def sync_event(event_id: int) -> EventSyncSummary:
             parsed = fetch_form_rows(event.spreadsheet_id, worksheet_name=event.worksheet_name)
             event.spreadsheet_title = parsed.spreadsheet_title
             event.worksheet_name = parsed.selected_sheet
+            if not event.photo_column:
+                event.photo_column = detect_form_columns(parsed.headers).get('photo')
             run.found_rows = len(parsed.rows)
 
             existing = {item.participant_key: item for item in AutoCertificateItem.query.filter_by(event_id=event.id).all()}
@@ -292,6 +313,9 @@ def sync_event(event_id: int) -> EventSyncSummary:
             for row in parsed.rows:
                 key = _participant_key(event, row)
                 if key in existing:
+                    item = existing[key]
+                    if event.photo_column and not item.photo_url:
+                        item.photo_url = (row.get(event.photo_column or '') or '').strip() or None
                     continue
                 item = AutoCertificateItem(
                     event_id=event.id,
@@ -302,6 +326,7 @@ def sync_event(event_id: int) -> EventSyncSummary:
                     institution_name=(row.get(event.institution_column or '') or '').strip() or None,
                     email=(row.get(event.email_column or '') or '').strip() or None,
                     phone=(row.get(event.phone_column or '') or '').strip() or None,
+                    photo_url=(row.get(event.photo_column or '') or '').strip() or None,
                     status='pending',
                 )
                 db.session.add(item)

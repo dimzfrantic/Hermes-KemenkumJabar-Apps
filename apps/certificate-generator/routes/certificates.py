@@ -11,12 +11,11 @@ from flask import Blueprint, current_app, flash, jsonify, redirect, render_templ
 from flask_login import login_required
 from google.auth.exceptions import RefreshError, TransportError
 from googleapiclient.errors import HttpError
-from openpyxl import load_workbook
-from pptx import Presentation
 
 from extensions import db
 from models import AutoCertificateEvent, AutoCertificateItem, AutoCertificateRun, GenerationJob, JobRowResult
-from services.auto_certificate import AutoCertificateError, detect_form_columns, reset_processing_items, retry_failed_items, sync_event, validate_event_configuration
+from services.certificate_photos import PHOTO_PLACEHOLDER, detect_photo_column, prepare_certificate_photo
+from services.auto_certificate import AutoCertificateError, reset_processing_items, retry_failed_items, sync_event, validate_event_configuration
 from services.excel_parser import WorkbookValidationError, load_participants
 from services.google_drive import DriveConfigurationError, get_folder_metadata, probe_folder_upload_with_config
 from services.google_sheets import SheetConfigurationError, fetch_form_rows, normalize_spreadsheet_input
@@ -282,6 +281,13 @@ def _detect_preview_columns(headers: list[str]) -> tuple[str, str] | tuple[None,
     return name_column, institution_column
 
 
+def _template_placeholders() -> list[str]:
+    placeholders = list(current_app.config.get('PPT_PLACEHOLDERS', ['{{nama}}', '{{instansi}}']))
+    if PHOTO_PLACEHOLDER not in placeholders:
+        placeholders.append(PHOTO_PLACEHOLDER)
+    return placeholders
+
+
 def _build_sample_conversion_preview(template_path: str, parsed) -> dict | None:
     name_column, institution_column = _detect_preview_columns(parsed.headers)
     if not name_column or not institution_column:
@@ -305,11 +311,28 @@ def _build_sample_conversion_preview(template_path: str, parsed) -> dict | None:
     build_pdf_safe_template(
         template_path,
         str(safe_template_path),
-        placeholders=list(current_app.config.get('PPT_PLACEHOLDERS', ['{{nama}}', '{{instansi}}'])),
+        placeholders=_template_placeholders(),
         working_dir=str(working_dir),
         soffice_path=current_app.config.get('SOFFICE_PATH', ''),
         cleanup_working_dir=True,
     )
+    photo_column = detect_photo_column(parsed.headers)
+    image_replacements = {}
+    if photo_column and sample_row.get(photo_column):
+        try:
+            photo_path = prepare_certificate_photo(
+                sample_row.get(photo_column),
+                preview_root,
+                google_token_path=current_app.config['GOOGLE_TOKEN_PATH'],
+                drive_scopes=list(current_app.config['DRIVE_SCOPES']),
+                row_number=sample_row.get('_row_number'),
+                use_cached_service=True,
+            )
+            if photo_path:
+                image_replacements[PHOTO_PLACEHOLDER] = photo_path
+        except Exception:
+            image_replacements = {}
+
     replace_placeholders(
         str(safe_template_path),
         str(filled_pptx_path),
@@ -317,6 +340,7 @@ def _build_sample_conversion_preview(template_path: str, parsed) -> dict | None:
             '{{nama}}': sample_row.get(name_column, ''),
             '{{instansi}}': sample_row.get(institution_column, ''),
         },
+        image_replacements=image_replacements,
     )
     preview_pdf_path = Path(convert_document_with_soffice(
         str(filled_pptx_path),
@@ -392,6 +416,7 @@ def _render_mapping_step(
     original_excel_name: str,
     selected_name_column: str = '',
     selected_institution_column: str = '',
+    selected_photo_column: str = '',
     drive_validation: dict | None = None,
     excel_format_hint: dict | None = None,
     sample_conversion_preview: dict | None = None,
@@ -411,6 +436,7 @@ def _render_mapping_step(
         drive_folder_id=drive_folder_id,
         selected_name_column=selected_name_column,
         selected_institution_column=selected_institution_column,
+        selected_photo_column=selected_photo_column or detect_photo_column(parsed.headers) or '',
         drive_validation=drive_validation,
         excel_format_hint=excel_format_hint,
         sample_conversion_preview=sample_conversion_preview,
@@ -528,7 +554,7 @@ def _save_auto_event_template(file_storage, event_uuid: str) -> tuple[str, str]:
     build_pdf_safe_template(
         str(original_path),
         str(safe_path),
-        placeholders=['{{nama}}'],
+        placeholders=['{{nama}}', PHOTO_PLACEHOLDER],
         working_dir=str(event_root / '_safe_build'),
         soffice_path=current_app.config.get('SOFFICE_PATH', ''),
         cleanup_working_dir=True,
@@ -727,6 +753,7 @@ def auto_event_new():
                 email_column=columns.get('email'),
                 institution_column=columns.get('institution'),
                 phone_column=columns.get('phone'),
+                photo_column=columns.get('photo'),
                 timestamp_column=columns.get('timestamp'),
                 polling_interval_minutes=payload['polling_interval_minutes'],
                 status='active',
@@ -856,6 +883,7 @@ def new_job():
         normalized_drive_folder_id = ''
         name_column = (request.form.get('name_column') or '').strip()
         institution_column = (request.form.get('institution_column') or '').strip()
+        photo_column = (request.form.get('photo_column') or '').strip()
 
         try:
             normalized_drive_folder_id = _normalize_drive_folder_input(drive_folder_id)
@@ -873,6 +901,7 @@ def new_job():
                     original_excel_name=original_excel_name,
                     selected_name_column=name_column,
                     selected_institution_column=institution_column,
+                    selected_photo_column=photo_column,
                     drive_validation=_invalid_drive_validation(drive_folder_id, '', str(exc)),
                     excel_format_hint=_build_excel_format_hint(parsed.headers),
                     sample_conversion_preview=sample_conversion_preview,
@@ -982,7 +1011,7 @@ def new_job():
                         excel_format_hint=excel_format_hint,
                         sample_conversion_preview=sample_conversion_preview,
                     )
-                missing_columns = [col for col in [name_column, institution_column] if col not in parsed.headers]
+                missing_columns = [col for col in [name_column, institution_column, photo_column] if col and col not in parsed.headers]
                 if missing_columns:
                     raise WorkbookValidationError(
                         f"Kolom pilihan tidak ditemukan pada Excel. Sistem mendeteksi header: {', '.join(parsed.headers)}. Sesuaikan dengan format contoh atau pilih ulang kolom yang tersedia."
@@ -999,7 +1028,7 @@ def new_job():
                 build_pdf_safe_template(
                     staged_template_path,
                     str(final_template_path),
-                    placeholders=list(current_app.config.get('PPT_PLACEHOLDERS', ['{{nama}}', '{{instansi}}'])),
+                    placeholders=_template_placeholders(),
                     working_dir=str(safe_build_root),
                     soffice_path=current_app.config.get('SOFFICE_PATH', ''),
                     cleanup_working_dir=True,
@@ -1014,6 +1043,7 @@ def new_job():
                     selected_sheet=parsed.selected_sheet,
                     name_column=name_column,
                     institution_column=institution_column,
+                    photo_column=photo_column or None,
                     total_rows=len(parsed.rows),
                     status='validated',
                     cancel_requested=False,
@@ -1040,6 +1070,7 @@ def new_job():
                         original_excel_name=original_excel_name,
                         selected_name_column=name_column,
                         selected_institution_column=institution_column,
+                        selected_photo_column=photo_column,
                         drive_validation=_invalid_drive_validation(drive_folder_id, normalized_drive_folder_id, str(exc)),
                         excel_format_hint=_build_excel_format_hint(parsed.headers),
                         sample_conversion_preview=_build_sample_conversion_preview(staged_template_path, parsed) if Path(staged_template_path).exists() else None,
