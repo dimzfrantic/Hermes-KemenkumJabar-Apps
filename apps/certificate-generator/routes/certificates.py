@@ -20,7 +20,7 @@ from services.excel_parser import WorkbookValidationError, load_participants
 from services.google_drive import DriveConfigurationError, get_folder_metadata, probe_folder_upload_with_config
 from services.google_sheets import SheetConfigurationError, fetch_form_rows, normalize_spreadsheet_input
 from services.job_runner import start_generation
-from services.pptx_generator import build_pdf_safe_template, convert_document_with_soffice, replace_placeholders
+from services.pptx_generator import build_pdf_safe_template, build_text_replacements_from_row, convert_document_with_soffice, expand_placeholder_tokens, placeholder_tokens_from_headers, replace_placeholders
 from services.storage import ensure_dir, remove_files, slugify_filename
 
 certificates_bp = Blueprint('certificates', __name__, url_prefix='/certificates')
@@ -316,8 +316,11 @@ def _detect_preview_columns(headers: list[str]) -> tuple[str, str] | tuple[None,
     return name_column, institution_column
 
 
-def _template_placeholders() -> list[str]:
-    placeholders = list(current_app.config.get('PPT_PLACEHOLDERS', ['{{nama}}', '{{instansi}}']))
+def _template_placeholders(headers: list[str] | None = None) -> list[str]:
+    placeholders = expand_placeholder_tokens(list(current_app.config.get('PPT_PLACEHOLDERS', [])))
+    for token in placeholder_tokens_from_headers(headers):
+        if token not in placeholders:
+            placeholders.append(token)
     if PHOTO_PLACEHOLDER not in placeholders:
         placeholders.append(PHOTO_PLACEHOLDER)
     return placeholders
@@ -325,17 +328,11 @@ def _template_placeholders() -> list[str]:
 
 def _build_sample_conversion_preview(template_path: str, parsed) -> dict | None:
     name_column, institution_column = _detect_preview_columns(parsed.headers)
-    if not name_column or not institution_column:
-        return {
-            'available': False,
-            'message': 'Preview contoh belum bisa ditampilkan otomatis karena kolom Nama/Instansi belum terdeteksi dari header Excel.',
-        }
-
-    sample_row = next((row for row in parsed.rows if (row.get(name_column) or '').strip() and (row.get(institution_column) or '').strip()), None)
+    sample_row = next((row for row in parsed.rows if any((str(value).strip() for key, value in row.items() if not str(key).startswith('_')))), None)
     if sample_row is None:
         return {
             'available': False,
-            'message': 'Preview contoh belum bisa ditampilkan karena belum ada baris peserta dengan nama dan instansi yang terisi.',
+            'message': 'Preview contoh belum bisa ditampilkan karena belum ada baris peserta yang terisi.',
         }
 
     preview_root = ensure_dir(Path(template_path).parent / '_validation_preview')
@@ -346,7 +343,7 @@ def _build_sample_conversion_preview(template_path: str, parsed) -> dict | None:
     build_pdf_safe_template(
         template_path,
         str(safe_template_path),
-        placeholders=_template_placeholders(),
+        placeholders=_template_placeholders(parsed.headers),
         working_dir=str(working_dir),
         soffice_path=current_app.config.get('SOFFICE_PATH', ''),
         cleanup_working_dir=True,
@@ -371,10 +368,7 @@ def _build_sample_conversion_preview(template_path: str, parsed) -> dict | None:
     replace_placeholders(
         str(safe_template_path),
         str(filled_pptx_path),
-        {
-            '{{nama}}': sample_row.get(name_column, ''),
-            '{{instansi}}': sample_row.get(institution_column, ''),
-        },
+        build_text_replacements_from_row(sample_row),
         image_replacements=image_replacements,
     )
     preview_pdf_path = Path(convert_document_with_soffice(
@@ -395,8 +389,8 @@ def _build_sample_conversion_preview(template_path: str, parsed) -> dict | None:
         'job_uuid': Path(template_path).parent.name,
         'image_name': preview_png_path.name,
         'pdf_name': preview_pdf_path.name,
-        'participant_name': sample_row.get(name_column, ''),
-        'institution_name': sample_row.get(institution_column, ''),
+        'participant_name': sample_row.get(name_column, '') if name_column else '',
+        'institution_name': sample_row.get(institution_column, '') if institution_column else '',
         'name_column': name_column,
         'institution_column': institution_column,
         'message': 'Preview contoh berikut dibuat otomatis dari 1 peserta pertama yang terdeteksi pada file Excel.',
@@ -580,7 +574,7 @@ def _event_summary(event: AutoCertificateEvent) -> dict:
     }
 
 
-def _save_auto_event_template(file_storage, event_uuid: str) -> tuple[str, str]:
+def _save_auto_event_template(file_storage, event_uuid: str, headers: list[str]) -> tuple[str, str]:
     event_root = ensure_dir(Path(current_app.config['AUTO_EVENT_DIR']) / event_uuid)
     filename = slugify_filename(Path(file_storage.filename or 'template.pptx').stem, default='template')
     original_path = event_root / 'template-original.pptx'
@@ -589,7 +583,7 @@ def _save_auto_event_template(file_storage, event_uuid: str) -> tuple[str, str]:
     build_pdf_safe_template(
         str(original_path),
         str(safe_path),
-        placeholders=['{{nama}}', PHOTO_PLACEHOLDER],
+        placeholders=placeholder_tokens_from_headers(headers) + [PHOTO_PLACEHOLDER],
         working_dir=str(event_root / '_safe_build'),
         soffice_path=current_app.config.get('SOFFICE_PATH', ''),
         cleanup_working_dir=True,
@@ -770,8 +764,8 @@ def auto_event_new():
         try:
             payload = _validate_auto_event_form(request.form, request.files)
             event_uuid = str(uuid4())
-            template_path, template_filename = _save_auto_event_template(payload['template_file'], event_uuid)
             parsed = fetch_form_rows(payload['spreadsheet_id'], worksheet_name=payload['worksheet_name'])
+            template_path, template_filename = _save_auto_event_template(payload['template_file'], event_uuid, parsed.headers)
             validation = validate_event_configuration(parsed, template_path)
             drive_validation = _build_drive_validation(request.form.get('drive_folder_id') or payload['drive_folder_id'], payload['drive_folder_id'])
             columns = validation['columns']
@@ -1063,7 +1057,7 @@ def new_job():
                 build_pdf_safe_template(
                     staged_template_path,
                     str(final_template_path),
-                    placeholders=_template_placeholders(),
+                    placeholders=_template_placeholders(parsed.headers),
                     working_dir=str(safe_build_root),
                     soffice_path=current_app.config.get('SOFFICE_PATH', ''),
                     cleanup_working_dir=True,

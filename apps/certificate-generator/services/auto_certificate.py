@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import fcntl
+import json
 import os
+import re
 import shutil
 import threading
 from dataclasses import dataclass
@@ -10,6 +12,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from flask import current_app
+from pptx import Presentation
 from google.auth.exceptions import RefreshError, TransportError
 from googleapiclient.errors import HttpError
 from sqlalchemy.exc import OperationalError
@@ -19,7 +22,7 @@ from models import AutoCertificateEvent, AutoCertificateItem, AutoCertificateRun
 from services.certificate_photos import PHOTO_PLACEHOLDER, prepare_certificate_photo
 from services.google_drive import DriveConfigurationError, upload_pdf_with_config
 from services.google_sheets import ParsedSheet, SheetConfigurationError, fetch_form_rows
-from services.pptx_generator import build_pdf_safe_template, convert_pptx_to_pdf_with_soffice, replace_placeholders
+from services.pptx_generator import build_pdf_safe_template, build_text_replacements_from_row, convert_pptx_to_pdf_with_soffice, placeholder_token_from_header, placeholder_tokens_from_headers, replace_placeholders
 from services.storage import ensure_dir, remove_dir, remove_files, slugify_filename
 
 _SYNC_LOCKS: dict[str, threading.Lock] = {}
@@ -92,10 +95,10 @@ def _normalize_header_key(value: str) -> str:
 
 
 HEADER_ALIASES = {
-    'name': ['namalengkap', 'nama', 'peserta', 'namapeserta'],
-    'email': ['email', 'alamatemail', 'surel'],
-    'institution': ['asalinstansi', 'instansi', 'unitkerja', 'satker'],
-    'phone': ['nomorwa', 'wa', 'nomorwa', 'nohp', 'noh p', 'telepon', 'nohpwa'],
+    'name': ['namalengkap', 'nama', 'peserta', 'namapeserta', 'name', 'fullname', 'full name', 'participantname'],
+    'email': ['email', 'alamatemail', 'surel', 'emailaddress', 'e-mail'],
+    'institution': ['asalinstansi', 'instansi', 'unitkerja', 'satker', 'institution', 'organization', 'organisasi'],
+    'phone': ['nomorwa', 'wa', 'nomorwa', 'nohp', 'noh p', 'telepon', 'nohpwa', 'phonenumber', 'nomortelponwa'],
     'timestamp': ['timestamp', 'stempelwaktu', 'waktu', 'tanggalwaktu'],
     'photo': ['foto', 'photo', 'pasfoto', 'uploadfoto', 'unggahfoto', 'filefoto', 'linkfoto', 'fotopeserta'],
 }
@@ -109,17 +112,71 @@ def detect_form_columns(headers: list[str]) -> dict[str, str | None]:
     return result
 
 
+def _extract_template_placeholders(template_path: str) -> list[str]:
+    prs = Presentation(template_path)
+    placeholders: list[str] = []
+    for slide in prs.slides:
+        for shape in slide.shapes:
+            if not getattr(shape, 'has_text_frame', False):
+                continue
+            for match in re.findall(r'\{\{[^{}]+\}\}', shape.text or ''):
+                if match not in placeholders:
+                    placeholders.append(match)
+    return placeholders
+
+
+def _infer_columns_from_template(headers: list[str], template_path: str, columns: dict[str, str | None]) -> dict[str, str | None]:
+    template_tokens = set(_extract_template_placeholders(template_path))
+    template_header_matches = [header for header in headers if placeholder_token_from_header(header) in template_tokens]
+    reserved = {value for value in columns.values() if value}
+
+    def pick_candidate(preferred_keys: list[str] | None = None) -> str | None:
+        preferred_keys = preferred_keys or []
+        normalized_lookup = {_normalize_header_key(header): header for header in template_header_matches if header not in reserved}
+        for key in preferred_keys:
+            candidate = normalized_lookup.get(_normalize_header_key(key))
+            if candidate:
+                return candidate
+        for header in template_header_matches:
+            if header not in reserved:
+                return header
+        return None
+
+    if not columns.get('name'):
+        columns['name'] = pick_candidate(['name', 'fullname', 'full name', 'nama lengkap', 'nama', 'participant name'])
+        if columns.get('name'):
+            reserved.add(columns['name'])
+    if not columns.get('institution'):
+        columns['institution'] = pick_candidate(['institution', 'organization', 'organisasi', 'instansi', 'asal instansi', 'unit kerja'])
+        if columns.get('institution'):
+            reserved.add(columns['institution'])
+    if not columns.get('email'):
+        columns['email'] = pick_candidate(['email', 'email address', 'alamat email', 'e-mail'])
+        if columns.get('email'):
+            reserved.add(columns['email'])
+    if not columns.get('phone'):
+        columns['phone'] = pick_candidate(['nomor telpon / wa', 'no wa', 'wa', 'phone', 'phone number'])
+        if columns.get('phone'):
+            reserved.add(columns['phone'])
+    if not columns.get('timestamp'):
+        columns['timestamp'] = pick_candidate(['timestamp', 'stempel waktu'])
+        if columns.get('timestamp'):
+            reserved.add(columns['timestamp'])
+    return columns
+
+
 def validate_event_configuration(parsed: ParsedSheet, template_path: str) -> dict:
     columns = detect_form_columns(parsed.headers)
+    columns = _infer_columns_from_template(parsed.headers, template_path, columns)
     if not columns.get('name'):
-        raise AutoCertificateError('Kolom Nama Lengkap tidak terdeteksi pada Google Form Response.')
+        raise AutoCertificateError('Kolom nama peserta tidak terdeteksi dari Google Form Response maupun placeholder template. Gunakan placeholder yang sama persis dengan header sheet, misalnya {{Name}} atau {{Nama Lengkap}}.')
 
     preview_root = ensure_dir(Path(template_path).parent / '_automation_validation')
     safe_template_path = preview_root / 'template-safe-check.pptx'
     build_pdf_safe_template(
         template_path,
         str(safe_template_path),
-        placeholders=['{{nama}}', PHOTO_PLACEHOLDER],
+        placeholders=placeholder_tokens_from_headers(parsed.headers) + [PHOTO_PLACEHOLDER],
         working_dir=str(preview_root / 'build'),
         soffice_path=current_app.config.get('SOFFICE_PATH', ''),
     )
@@ -202,21 +259,32 @@ def _is_retryable_generation_error(exc: Exception) -> bool:
     return False
 
 
-def _prepare_event_template(event: AutoCertificateEvent) -> Path:
+def _prepare_event_template(event: AutoCertificateEvent, headers: list[str]) -> Path:
     event_root = ensure_dir(Path(current_app.config['AUTO_EVENT_DIR']) / event.event_uuid)
     template_original = event_root / 'template-original.pptx'
     template_safe = event_root / 'template-safe.pptx'
     if not template_original.exists():
         raise AutoCertificateError('Template kegiatan tidak ditemukan pada server.')
-    if not template_safe.exists():
-        build_pdf_safe_template(
-            str(template_original),
-            str(template_safe),
-            placeholders=['{{nama}}', PHOTO_PLACEHOLDER],
-            working_dir=str(event_root / '_safe_build'),
-            soffice_path=current_app.config.get('SOFFICE_PATH', ''),
-            cleanup_working_dir=True,
-        )
+    legacy_replacements = {}
+    if event.name_column:
+        legacy_replacements['{{nama}}'] = f'{{{{{event.name_column}}}}}'
+    if event.institution_column:
+        legacy_replacements['{{instansi}}'] = f'{{{{{event.institution_column}}}}}'
+    if legacy_replacements:
+        legacy_backup = event_root / 'template-original-legacy-backup.pptx'
+        migrated_template = event_root / 'template-original-migrated.pptx'
+        if not legacy_backup.exists():
+            shutil.copy2(template_original, legacy_backup)
+        replace_placeholders(str(template_original), str(migrated_template), legacy_replacements)
+        shutil.move(str(migrated_template), str(template_original))
+    build_pdf_safe_template(
+        str(template_original),
+        str(template_safe),
+        placeholders=placeholder_tokens_from_headers(headers) + [PHOTO_PLACEHOLDER],
+        working_dir=str(event_root / '_safe_build'),
+        soffice_path=current_app.config.get('SOFFICE_PATH', ''),
+        cleanup_working_dir=True,
+    )
     return template_safe
 
 
@@ -232,6 +300,22 @@ def _generate_item_certificate(event: AutoCertificateEvent, item: AutoCertificat
     pdf_path = runtime_root / f'{pptx_path.stem}.pdf'
     photo_path = None
     try:
+        try:
+            source_data = json.loads(item.source_data_json or '{}')
+        except (TypeError, ValueError):
+            source_data = {}
+        if not isinstance(source_data, dict):
+            source_data = {}
+        if not source_data:
+            fallback_values = {
+                event.name_column: item.participant_name,
+                event.institution_column: item.institution_name,
+                event.email_column: item.email,
+                event.phone_column: item.phone,
+                event.photo_column: item.photo_url,
+                event.timestamp_column: item.submitted_at,
+            }
+            source_data = {key: value for key, value in fallback_values.items() if key}
         image_replacements = {}
         photo_path = prepare_certificate_photo(
             item.photo_url,
@@ -246,7 +330,7 @@ def _generate_item_certificate(event: AutoCertificateEvent, item: AutoCertificat
         replace_placeholders(
             template_safe_path,
             str(pptx_path),
-            {'{{nama}}': normalized_name},
+            build_text_replacements_from_row(source_data),
             image_replacements=image_replacements,
         )
         actual_pdf = convert_pptx_to_pdf_with_soffice(str(pptx_path), str(runtime_root), current_app.config.get('SOFFICE_PATH', ''))
@@ -304,17 +388,37 @@ def sync_event(event_id: int) -> EventSyncSummary:
             parsed = fetch_form_rows(event.spreadsheet_id, worksheet_name=event.worksheet_name)
             event.spreadsheet_title = parsed.spreadsheet_title
             event.worksheet_name = parsed.selected_sheet
-            if not event.photo_column:
-                event.photo_column = detect_form_columns(parsed.headers).get('photo')
+            detected_columns = _infer_columns_from_template(parsed.headers, str(Path(current_app.config['AUTO_EVENT_DIR']) / event.event_uuid / 'template-original.pptx'), detect_form_columns(parsed.headers))
+            if not event.name_column or event.name_column not in parsed.headers:
+                event.name_column = detected_columns.get('name')
+            if not event.institution_column or event.institution_column not in parsed.headers:
+                event.institution_column = detected_columns.get('institution')
+            if not event.email_column or event.email_column not in parsed.headers:
+                event.email_column = detected_columns.get('email')
+            if not event.phone_column or event.phone_column not in parsed.headers:
+                event.phone_column = detected_columns.get('phone')
+            if not event.timestamp_column or event.timestamp_column not in parsed.headers:
+                event.timestamp_column = detected_columns.get('timestamp')
+            if not event.photo_column or event.photo_column not in parsed.headers:
+                event.photo_column = detected_columns.get('photo')
+            if not event.name_column:
+                raise AutoCertificateError('Kolom nama peserta pada auto generate tidak terdeteksi dari sheet maupun placeholder template.')
             run.found_rows = len(parsed.rows)
 
             existing = {item.participant_key: item for item in AutoCertificateItem.query.filter_by(event_id=event.id).all()}
             queued_rows = 0
             for row in parsed.rows:
                 key = _participant_key(event, row)
+                source_data = {str(header): value for header, value in row.items() if not str(header).startswith('_')}
+                source_data_json = json.dumps(source_data, ensure_ascii=False)
                 if key in existing:
                     item = existing[key]
-                    if event.photo_column and not item.photo_url:
+                    item.source_data_json = source_data_json
+                    item.participant_name = (row.get(event.name_column or '') or '').strip() or None
+                    item.institution_name = (row.get(event.institution_column or '') or '').strip() or None
+                    item.email = (row.get(event.email_column or '') or '').strip() or None
+                    item.phone = (row.get(event.phone_column or '') or '').strip() or None
+                    if event.photo_column:
                         item.photo_url = (row.get(event.photo_column or '') or '').strip() or None
                     continue
                 item = AutoCertificateItem(
@@ -327,6 +431,7 @@ def sync_event(event_id: int) -> EventSyncSummary:
                     email=(row.get(event.email_column or '') or '').strip() or None,
                     phone=(row.get(event.phone_column or '') or '').strip() or None,
                     photo_url=(row.get(event.photo_column or '') or '').strip() or None,
+                    source_data_json=source_data_json,
                     status='pending',
                 )
                 db.session.add(item)
@@ -335,7 +440,7 @@ def sync_event(event_id: int) -> EventSyncSummary:
             run.queued_rows = queued_rows
 
             event_root = ensure_dir(Path(current_app.config['AUTO_EVENT_DIR']) / event.event_uuid)
-            template_safe_path = _prepare_event_template(event)
+            template_safe_path = _prepare_event_template(event, parsed.headers)
 
             pending_items = AutoCertificateItem.query.filter_by(event_id=event.id, status='pending').order_by(AutoCertificateItem.id.asc()).all()
 

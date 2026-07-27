@@ -20,6 +20,7 @@ SCHEMA_COLUMNS = {
     },
     'auto_certificate_items': {
         'photo_url': 'TEXT',
+        'source_data_json': 'TEXT',
     },
 }
 

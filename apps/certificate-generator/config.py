@@ -15,8 +15,15 @@ for path in (INSTANCE_DIR, RUNTIME_DIR, PREVIEW_DIR, JOB_DIR, AUTO_EVENT_DIR, AU
     path.mkdir(parents=True, exist_ok=True)
 
 
+def _required_env(name: str) -> str:
+    value = os.getenv(name, '').strip()
+    if not value:
+        raise RuntimeError(f'Environment variable wajib belum diisi: {name}')
+    return value
+
+
 class Config:
-    SECRET_KEY = os.getenv('SECRET_KEY', 'certificate-generator-dev-secret')
+    SECRET_KEY = _required_env('SECRET_KEY')
     SQLALCHEMY_DATABASE_URI = os.getenv(
         'DATABASE_URL',
         f"sqlite:///{(INSTANCE_DIR / 'certificate_generator.db').as_posix()}"
@@ -26,13 +33,14 @@ class Config:
 
     APP_NAME = os.getenv('APP_NAME', 'Layanan e-sertifikat Kemenkum Jabar')
     APP_TIMEZONE = os.getenv('APP_TIMEZONE', 'Asia/Jakarta')
-    ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')
-    ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'Admin123!')
-    ADMIN_DISPLAY_NAME = os.getenv('ADMIN_DISPLAY_NAME', 'Admin Sertifikat')
+    ADMIN_USERNAME = _required_env('ADMIN_USERNAME')
+    ADMIN_PASSWORD = _required_env('ADMIN_PASSWORD')
+    ADMIN_DISPLAY_NAME = _required_env('ADMIN_DISPLAY_NAME')
 
     GOOGLE_TOKEN_PATH = os.getenv('GOOGLE_TOKEN_PATH', str(Path.home() / '.hermes' / 'google_token.json'))
     DRIVE_SCOPES = [
         'https://www.googleapis.com/auth/drive.file',
+        'https://www.googleapis.com/auth/drive.readonly',
     ]
     SHEETS_SCOPES = [
         'https://www.googleapis.com/auth/spreadsheets.readonly',
@@ -54,5 +62,5 @@ class Config:
     AUTO_EVENT_DEFAULT_INTERVAL_MINUTES = int(os.getenv('AUTO_EVENT_DEFAULT_INTERVAL_MINUTES', '5'))
     ALLOWED_TEMPLATE_EXTENSIONS = {'pptx'}
     ALLOWED_DATA_EXTENSIONS = {'xlsx'}
-    PPT_PLACEHOLDERS = ['{{nama}}', '{{instansi}}']
+    PPT_PLACEHOLDERS = []
     SOFFICE_PATH = os.getenv('SOFFICE_PATH', '')

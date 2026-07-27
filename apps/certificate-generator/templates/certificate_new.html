@@ -115,7 +115,7 @@
         <div class="mb-3">
           <div class="eyebrow mb-2">Konfigurasi peserta</div>
           <h2 class="h3 fw-bold mb-1">Pemetaan data untuk placeholder sertifikat</h2>
-          <p class="small-muted mb-0">Pilih sheet dan kolom yang akan dihubungkan dengan placeholder pada template sertifikat.</p>
+          <p class="small-muted mb-0">Setiap header Excel otomatis tersedia sebagai placeholder dengan nama yang sama persis, misalnya header Rumah dipanggil sebagai {{ '{{Rumah}}' }}.</p>
         </div>
         <div class="row g-4">
           <div class="col-md-4">
@@ -131,7 +131,7 @@
             </select>
           </div>
           <div class="col-md-4">
-            <label class="form-label">Kolom Nama → {{ '{{nama}}' }}</label>
+            <label class="form-label">Kolom utama untuk nama peserta/file</label>
             <select class="form-select" name="name_column" required>
               <option value="">Pilih kolom nama</option>
               {% for header in workbook_headers or [] %}
@@ -140,7 +140,7 @@
             </select>
           </div>
           <div class="col-md-4">
-            <label class="form-label">Kolom Instansi → {{ '{{instansi}}' }}</label>
+            <label class="form-label">Kolom utama untuk instansi/ringkasan</label>
             <select class="form-select" name="institution_column" required>
               <option value="">Pilih kolom instansi</option>
               {% for header in workbook_headers or [] %}

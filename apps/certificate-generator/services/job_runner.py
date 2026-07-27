@@ -14,7 +14,7 @@ from models import GenerationJob, JobRowResult
 from services.certificate_photos import PHOTO_PLACEHOLDER, prepare_certificate_photo
 from services.excel_parser import load_participants
 from services.google_drive import upload_pdf_with_config
-from services.pptx_generator import convert_pptx_to_pdf_with_soffice, replace_placeholders
+from services.pptx_generator import build_text_replacements_from_row, convert_pptx_to_pdf_with_soffice, replace_placeholders
 from services.storage import ensure_dir, remove_files, slugify_filename
 
 _JOB_LOCKS: dict[str, threading.Lock] = {}
@@ -136,6 +136,7 @@ def _process_participant(
     name: str,
     institution: str,
     photo_ref: str,
+    text_replacements: dict[str, str],
     retry_count: int,
     google_token_path: str,
     drive_scopes: list[str],
@@ -162,10 +163,7 @@ def _process_participant(
             replace_placeholders(
                 template_path,
                 str(pptx_path),
-                {
-                    '{{nama}}': name,
-                    '{{instansi}}': institution,
-                },
+                text_replacements,
                 image_replacements=image_replacements,
             )
             actual_pdf_path = convert_pptx_to_pdf_with_soffice(str(pptx_path), str(runtime_root), soffice_path)
@@ -267,7 +265,8 @@ def _run_generation(app, job_id: int, template_path: str, workbook_path: str):
                         'message': 'Nama atau instansi kosong.',
                     })
                     continue
-                participants.append((row_number, name, institution, photo_ref))
+                text_replacements = build_text_replacements_from_row(row)
+                participants.append((row_number, name, institution, photo_ref, text_replacements))
 
             runtime_root = ensure_dir(Path(current_app.config['RUNTIME_DIR']) / job.job_uuid)
             max_workers = max(1, int(current_app.config.get('MAX_PARALLEL_WORKERS', 3)))
@@ -284,7 +283,7 @@ def _run_generation(app, job_id: int, template_path: str, workbook_path: str):
 
                 def submit_next() -> bool:
                     try:
-                        row_number, name, institution, photo_ref = next(participant_iter)
+                        row_number, name, institution, photo_ref, text_replacements = next(participant_iter)
                     except StopIteration:
                         return False
                     future = executor.submit(
@@ -296,6 +295,7 @@ def _run_generation(app, job_id: int, template_path: str, workbook_path: str):
                         name,
                         institution,
                         photo_ref,
+                        text_replacements,
                         retry_count,
                         google_token_path,
                         drive_scopes,

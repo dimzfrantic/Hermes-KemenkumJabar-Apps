@@ -8,6 +8,41 @@ from uuid import uuid4
 from flask import current_app
 from PIL import Image
 from pptx import Presentation
+from pptx.util import Emu
+
+
+def placeholder_token_from_header(header: str) -> str:
+    text = '' if header is None else str(header).strip()
+    if not text or text.startswith('_'):
+        return ''
+    return f'{{{{{text}}}}}'
+
+
+def placeholder_tokens_from_headers(headers: list[str] | None) -> list[str]:
+    tokens: list[str] = []
+    for header in headers or []:
+        token = placeholder_token_from_header(header)
+        if token and token not in tokens:
+            tokens.append(token)
+    return tokens
+
+
+def build_text_replacements_from_row(row: dict) -> dict[str, str]:
+    replacements: dict[str, str] = {}
+    for header, value in (row or {}).items():
+        token = placeholder_token_from_header(header)
+        if not token:
+            continue
+        replacements[token] = '' if value is None else str(value).strip()
+    return replacements
+
+
+def expand_placeholder_tokens(placeholders: list[str] | None) -> list[str]:
+    expanded: list[str] = []
+    for token in placeholders or []:
+        if token not in expanded:
+            expanded.append(token)
+    return expanded
 
 
 def _normalize_replacements(replacements: dict[str, str]) -> dict[str, str]:
@@ -138,6 +173,84 @@ def _apply_center_crop(picture, image_path: str, box_width, box_height):
         picture.crop_bottom = crop
 
 
+def _resolved_image_box(token: str, left, top, width, height):
+    if token != '{{foto}}':
+        return left, top, width, height
+    if not width or not height:
+        return left, top, width, height
+    try:
+        box_ratio = int(width) / int(height)
+    except Exception:
+        return left, top, width, height
+    if box_ratio <= 1.2:
+        return left, top, width, height
+    portrait_height = int(int(width) * 4 / 3)
+    if portrait_height <= int(height):
+        return left, top, width, height
+    center_y = int(top) + (int(height) // 2)
+    adjusted_top = center_y - (portrait_height // 2)
+    return left, adjusted_top, width, portrait_height
+
+
+def _boxes_overlap(left_a, top_a, width_a, height_a, left_b, top_b, width_b, height_b) -> bool:
+    right_a = int(left_a) + int(width_a)
+    bottom_a = int(top_a) + int(height_a)
+    right_b = int(left_b) + int(width_b)
+    bottom_b = int(top_b) + int(height_b)
+    return not (
+        right_a <= int(left_b)
+        or right_b <= int(left_a)
+        or bottom_a <= int(top_b)
+        or bottom_b <= int(top_a)
+    )
+
+
+def _collect_overlapping_placeholder_shapes(slide, current_shape, token: str, left, top, width, height):
+    overlaps = []
+    if token != '{{foto}}':
+        return overlaps
+    for other_shape in slide.shapes:
+        if other_shape == current_shape:
+            continue
+        if not getattr(other_shape, 'has_text_frame', False):
+            continue
+        other_text = (other_shape.text or '').strip()
+        if '{{' not in other_text or other_text == token:
+            continue
+        if _boxes_overlap(left, top, width, height, other_shape.left, other_shape.top, other_shape.width, other_shape.height):
+            overlaps.append(other_shape)
+    overlaps.sort(key=lambda shape: int(shape.top))
+    return overlaps
+
+
+def _shrink_box_to_fit_text_below(left, top, width, height, overlapping_shapes, slide_height):
+    if not overlapping_shapes or slide_height is None:
+        return left, top, width, height
+    gap = max(91440 // 4, int(height) // 12)
+    text_stack_height = sum(int(shape.height) for shape in overlapping_shapes)
+    text_stack_height += gap * len(overlapping_shapes)
+    available_height = int(slide_height) - int(top) - text_stack_height
+    if available_height <= 0 or available_height >= int(height):
+        return left, top, width, height
+    scale = available_height / max(int(height), 1)
+    center_x = int(left) + (int(width) // 2)
+    new_width = max(1, int(int(width) * scale))
+    new_height = max(1, int(available_height))
+    new_left = center_x - (new_width // 2)
+    return new_left, int(top), new_width, new_height
+
+
+def _stack_overlapping_placeholder_shapes_below(photo_bottom: int, overlapping_shapes):
+    if not overlapping_shapes:
+        return
+    tallest = max(int(shape.height) for shape in overlapping_shapes)
+    gap = max(91440 // 4, tallest // 12)
+    cursor = int(photo_bottom) + gap
+    for shape in overlapping_shapes:
+        shape.top = Emu(cursor)
+        cursor += int(shape.height) + gap
+
+
 def _replace_image_placeholders(prs: Presentation, image_replacements: dict[str, str]):
     normalized = {token: str(path) for token, path in (image_replacements or {}).items() if path and Path(str(path)).exists()}
     if not normalized:
@@ -152,6 +265,11 @@ def _replace_image_placeholders(prs: Presentation, image_replacements: dict[str,
                 continue
             image_path = normalized[matched_token]
             left, top, width, height = shape.left, shape.top, shape.width, shape.height
+            left, top, width, height = _resolved_image_box(matched_token, left, top, width, height)
+            overlapping_shapes = _collect_overlapping_placeholder_shapes(slide, shape, matched_token, left, top, width, height)
+            left, top, width, height = _shrink_box_to_fit_text_below(left, top, width, height, overlapping_shapes, prs.slide_height)
+            overlapping_shapes = _collect_overlapping_placeholder_shapes(slide, shape, matched_token, left, top, width, height)
+            _stack_overlapping_placeholder_shapes_below(int(top) + int(height), overlapping_shapes)
             _delete_shape(shape)
             picture = slide.shapes.add_picture(image_path, left, top, width=width, height=height)
             _apply_center_crop(picture, image_path, width, height)
@@ -193,7 +311,7 @@ def _validate_placeholder_shapes(prs: Presentation, placeholders: list[str]) -> 
     found = _find_placeholder_shapes(prs, placeholders)
     if not found:
         raise RuntimeError(
-            'Placeholder template tidak ditemukan. Pastikan template PPTX memuat placeholder teks seperti {{nama}} dan {{instansi}}.'
+            'Placeholder template tidak ditemukan. Pastikan template PPTX memuat placeholder yang sama persis dengan header sumber data, misalnya {{Nama Lengkap}}.'
         )
 
     for slide_index, shape_index in found:
@@ -206,7 +324,8 @@ def _validate_placeholder_shapes(prs: Presentation, placeholders: list[str]) -> 
             cleaned = cleaned.replace(token, '')
         if cleaned.strip():
             raise RuntimeError(
-                'Textbox placeholder hanya boleh berisi placeholder murni. '
+                'Textbox placeholder hanya boleh berisi satu placeholder murni per textbox. '
+                'Gunakan satu textbox terpisah untuk setiap placeholder header sumber data; {{foto}} tetap khusus untuk gambar. '
                 'Pindahkan ornamen/desain ke background PNG dan sisakan textbox untuk placeholder saja.'
             )
     return found
@@ -373,7 +492,7 @@ def build_pdf_safe_template(
 ) -> dict:
     source_path = Path(input_pptx)
     target_path = Path(output_pptx)
-    placeholder_tokens = list(placeholders or ['{{nama}}', '{{instansi}}'])
+    placeholder_tokens = expand_placeholder_tokens(list(placeholders or []))
     if not placeholder_tokens:
         raise RuntimeError('Daftar placeholder template kosong. Tidak dapat menyiapkan mode aman PDF.')
 

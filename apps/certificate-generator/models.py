@@ -137,6 +137,7 @@ class AutoCertificateItem(db.Model):
     email = db.Column(db.String(255), nullable=True)
     phone = db.Column(db.String(255), nullable=True)
     photo_url = db.Column(db.Text, nullable=True)
+    source_data_json = db.Column(db.Text, nullable=True)
     status = db.Column(db.String(32), nullable=False, default='pending', index=True)
     output_filename = db.Column(db.String(255), nullable=True)
     drive_file_id = db.Column(db.String(128), nullable=True)
