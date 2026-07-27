@@ -98,11 +98,40 @@ def _normalize_drive_folder_input(raw_value: str) -> str:
     raise DriveConfigurationError('Link Google Drive tidak dikenali. Gunakan link folder atau Folder ID yang valid.')
 
 
+def _friendly_google_configuration_message(message: str) -> str:
+    text = (message or '').strip()
+    if 'spreadsheets.readonly' in text or 'Token Google Sheets' in text:
+        return (
+            'Token Google di server belum memiliki izin Google Sheets yang dibutuhkan '
+            '(spreadsheets.readonly). Saat ini token perlu diperbarui agar memuat '
+            'akses Google Drive dan Google Sheets sebelum validasi atau generate dijalankan.'
+        )
+    if 'Token Google tidak ditemukan' in text:
+        return (
+            'Token Google pada server belum tersedia. Silakan pasang atau perbarui token '
+            'Google OAuth terlebih dahulu sebelum validasi atau generate dijalankan.'
+        )
+    if 'Autentikasi Google Drive pada server sudah tidak berlaku' in text or 'Token Google Drive' in text:
+        return (
+            'Token Google di server bermasalah untuk akses Google Drive. Silakan perbarui '
+            'token Google OAuth terlebih dahulu sebelum validasi atau generate dijalankan.'
+        )
+    return text
+
+
+def _google_validation_status(message: str) -> tuple[str, str]:
+    text = (message or '').strip()
+    if any(keyword in text for keyword in ['Token Google', 'Autentikasi Google Drive', 'spreadsheets.readonly']):
+        return 'pending', 'Token Google perlu diperbarui'
+    return 'invalid', 'Link/ID tidak valid'
+
+
 def _invalid_drive_validation(input_value: str, folder_id: str, message: str) -> dict:
+    status, label = _google_validation_status(message)
     return {
-        'status': 'invalid',
-        'label': 'Link/ID tidak valid',
-        'message': message,
+        'status': status,
+        'label': label,
+        'message': _friendly_google_configuration_message(message),
         'input_value': input_value,
         'folder_id': folder_id,
         'folder_name': '',
@@ -125,7 +154,10 @@ def _build_drive_validation(input_value: str, folder_id: str) -> dict:
             'folder_name': folder_name,
         }
     except RefreshError as exc:
-        raise DriveConfigurationError('Autentikasi Google Drive pada server sudah tidak berlaku. Token perlu diperbarui terlebih dahulu sebelum validasi atau generate dapat dijalankan.') from exc
+        raise DriveConfigurationError(
+            'Token Google di server bermasalah untuk akses Google Drive. '
+            'Silakan perbarui token Google OAuth terlebih dahulu sebelum validasi atau generate dijalankan.'
+        ) from exc
     except HttpError as exc:
         status = getattr(getattr(exc, 'resp', None), 'status', None)
         if status not in {403, 404}:
@@ -139,7 +171,10 @@ def _build_drive_validation(input_value: str, folder_id: str) -> dict:
             list(current_app.config['DRIVE_SCOPES']),
         )
     except RefreshError as exc:
-        raise DriveConfigurationError('Autentikasi Google Drive pada server sudah tidak berlaku. Token perlu diperbarui terlebih dahulu sebelum validasi atau generate dapat dijalankan.') from exc
+        raise DriveConfigurationError(
+            'Token Google di server bermasalah untuk akses Google Drive. '
+            'Silakan perbarui token Google OAuth terlebih dahulu sebelum validasi atau generate dijalankan.'
+        ) from exc
     except HttpError as exc:
         status = getattr(getattr(exc, 'resp', None), 'status', None)
         if status in {400, 403, 404}:
@@ -773,7 +808,7 @@ def auto_event_new():
             db.session.rollback()
             if event_uuid:
                 _cleanup_auto_event_artifacts(event_uuid)
-            flash(str(exc), 'danger')
+            flash(_friendly_google_configuration_message(str(exc)), 'danger')
             return render_template('auto_event_form.html', defaults=request.form, automation_events=automation_events)
         except TransportError as exc:
             db.session.rollback()
@@ -891,7 +926,7 @@ def new_job():
             if step == 'mapping' and staged_workbook_path and Path(staged_workbook_path).exists():
                 parsed = load_participants(staged_workbook_path, sheet_name=sheet_name)
                 sample_conversion_preview = _build_sample_conversion_preview(staged_template_path, parsed) if staged_template_path and Path(staged_template_path).exists() else None
-                flash(str(exc), 'danger')
+                flash(_friendly_google_configuration_message(str(exc)), 'danger')
                 return _render_mapping_step(
                     parsed=parsed,
                     drive_folder_id=normalized_drive_folder_id,
@@ -906,7 +941,7 @@ def new_job():
                     excel_format_hint=_build_excel_format_hint(parsed.headers),
                     sample_conversion_preview=sample_conversion_preview,
                 )
-            flash(str(exc), 'danger')
+            flash(_friendly_google_configuration_message(str(exc)), 'danger')
             return _render_new_job_template(
                 current_step='validate',
                 drive_folder_id=drive_folder_id,
@@ -975,7 +1010,7 @@ def new_job():
                 elif not reuse_staged_files and preserve_staged_files:
                     staged_template_path = template_path
                     staged_workbook_path = workbook_path
-                flash(str(exc), 'danger')
+                flash(_friendly_google_configuration_message(str(exc)), 'danger')
                 return _render_new_job_template(
                     current_step='validate',
                     drive_folder_id=normalized_drive_folder_id,
@@ -1055,7 +1090,7 @@ def new_job():
                 flash('Konfigurasi kolom berhasil disimpan. Template juga sudah diproses otomatis ke mode aman PDF. Job siap digenerate.', 'success')
                 return redirect(url_for('certificates.review_job', job_uuid=job.job_uuid))
             except (WorkbookValidationError, DriveConfigurationError, RuntimeError) as exc:
-                flash(str(exc), 'danger')
+                flash(_friendly_google_configuration_message(str(exc)), 'danger')
                 if Path(staged_workbook_path).exists():
                     try:
                         parsed = load_participants(staged_workbook_path, sheet_name=sheet_name)
