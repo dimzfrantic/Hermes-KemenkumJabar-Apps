@@ -8,6 +8,7 @@ from uuid import uuid4
 from flask import current_app
 from PIL import Image
 from pptx import Presentation
+from pptx.enum.text import PP_ALIGN
 from pptx.util import Emu
 
 
@@ -331,6 +332,53 @@ def _validate_placeholder_shapes(prs: Presentation, placeholders: list[str]) -> 
     return found
 
 
+_XML_PARAGRAPH_ALIGNMENTS = {
+    'l': PP_ALIGN.LEFT,
+    'ctr': PP_ALIGN.CENTER,
+    'r': PP_ALIGN.RIGHT,
+    'just': PP_ALIGN.JUSTIFY,
+    'dist': PP_ALIGN.DISTRIBUTE,
+    'thaiDist': PP_ALIGN.THAI_DISTRIBUTE,
+    'justLow': PP_ALIGN.JUSTIFY_LOW,
+}
+
+
+def _list_style_alignment(shape, paragraph_level: int):
+    try:
+        level_nodes = shape._element.txBody.xpath(f'./a:lstStyle/a:lvl{paragraph_level + 1}pPr')
+        if level_nodes:
+            return _XML_PARAGRAPH_ALIGNMENTS.get(level_nodes[0].get('algn'))
+    except Exception:
+        return None
+    return None
+
+
+def _effective_paragraph_alignment(src_shape, src_paragraph):
+    if src_paragraph.alignment is not None:
+        return src_paragraph.alignment
+
+    alignment = _list_style_alignment(src_shape, src_paragraph.level)
+    if alignment is not None:
+        return alignment
+
+    if getattr(src_shape, 'is_placeholder', False):
+        try:
+            placeholder_idx = src_shape.placeholder_format.idx
+            slide_layout = src_shape.part.slide.slide_layout
+            for layout_shape in slide_layout.placeholders:
+                if layout_shape.placeholder_format.idx != placeholder_idx:
+                    continue
+                alignment = _list_style_alignment(layout_shape, src_paragraph.level)
+                if alignment is not None:
+                    return alignment
+                layout_paragraphs = list(layout_shape.text_frame.paragraphs)
+                if layout_paragraphs and layout_paragraphs[0].alignment is not None:
+                    return layout_paragraphs[0].alignment
+        except Exception:
+            pass
+    return None
+
+
 def _copy_textbox_style(src_shape, dest_shape):
     dest_shape.text_frame.clear()
     dest_shape.text_frame.word_wrap = src_shape.text_frame.word_wrap
@@ -347,7 +395,7 @@ def _copy_textbox_style(src_shape, dest_shape):
     src_paragraphs = list(src_shape.text_frame.paragraphs)
     for paragraph_index, src_paragraph in enumerate(src_paragraphs):
         dest_paragraph = dest_shape.text_frame.paragraphs[0] if paragraph_index == 0 else dest_shape.text_frame.add_paragraph()
-        dest_paragraph.alignment = src_paragraph.alignment
+        dest_paragraph.alignment = _effective_paragraph_alignment(src_shape, src_paragraph)
         dest_paragraph.level = src_paragraph.level
         try:
             dest_paragraph.line_spacing = src_paragraph.line_spacing

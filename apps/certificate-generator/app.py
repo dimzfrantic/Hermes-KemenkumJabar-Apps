@@ -43,7 +43,21 @@ def create_app():
 
     @app.context_processor
     def inject_app_name():
-        return {'app_name': app.config['APP_NAME']}
+        google_token_status = None
+        if current_user.is_authenticated:
+            try:
+                from services.google_oauth_manager import get_oauth_status
+                google_token_status = get_oauth_status(
+                    app.config['GOOGLE_TOKEN_PATH'],
+                    app.config['GOOGLE_OAUTH_CLIENT_SECRET_PATH'],
+                    app.config.get('GOOGLE_OAUTH_TESTING_WINDOW_DAYS', 7),
+                )
+            except Exception:
+                app.logger.exception('Gagal membaca status token Google')
+        return {
+            'app_name': app.config['APP_NAME'],
+            'google_token_status': google_token_status,
+        }
 
     @app.before_request
     def redirect_root_for_authenticated_user():

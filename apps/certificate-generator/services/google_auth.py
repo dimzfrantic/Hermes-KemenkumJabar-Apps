@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import fcntl
+import os
 from pathlib import Path
 
+from google.auth.exceptions import RefreshError
+from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 
 
@@ -39,8 +43,36 @@ def ensure_required_scopes(creds: Credentials, required_scopes: list[str], conte
         )
 
 
+def _write_credentials(token_file: Path, creds: Credentials):
+    tmp_file = token_file.with_suffix(token_file.suffix + '.tmp')
+    tmp_file.write_text(creds.to_json())
+    os.chmod(tmp_file, 0o600)
+    tmp_file.replace(token_file)
+    os.chmod(token_file, 0o600)
+
+
 def load_authorized_user_credentials(token_path: str) -> Credentials:
     token_file = Path(token_path)
     if not token_file.exists():
         raise FileNotFoundError(f'Token Google tidak ditemukan di {token_file}')
-    return Credentials.from_authorized_user_file(str(token_file))
+
+    lock_file = token_file.with_suffix(token_file.suffix + '.lock')
+    lock_file.parent.mkdir(parents=True, exist_ok=True)
+    with lock_file.open('a+') as lock_handle:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        creds = Credentials.from_authorized_user_file(str(token_file))
+        if creds.expired:
+            if not creds.refresh_token:
+                raise RuntimeError(
+                    'Token Google kedaluwarsa dan tidak memiliki refresh token. '
+                    'Otorisasi ulang satu kali diperlukan.'
+                )
+            try:
+                creds.refresh(Request())
+            except RefreshError as exc:
+                raise RuntimeError(
+                    'Refresh token Google sudah dicabut/kedaluwarsa atau OAuth client tidak aktif. '
+                    'Otorisasi ulang diperlukan; token akses biasa seharusnya diperbarui otomatis.'
+                ) from exc
+            _write_credentials(token_file, creds)
+        return creds

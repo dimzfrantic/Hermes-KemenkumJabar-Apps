@@ -7,7 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
+from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, send_file, session, url_for
 from flask_login import login_required
 from google.auth.exceptions import RefreshError, TransportError
 from googleapiclient.errors import HttpError
@@ -17,7 +17,8 @@ from models import AutoCertificateEvent, AutoCertificateItem, AutoCertificateRun
 from services.certificate_photos import PHOTO_PLACEHOLDER, detect_photo_column, prepare_certificate_photo
 from services.auto_certificate import AutoCertificateError, reset_processing_items, retry_failed_items, sync_event, validate_event_configuration
 from services.excel_parser import WorkbookValidationError, load_participants
-from services.google_drive import DriveConfigurationError, get_folder_metadata, probe_folder_upload_with_config
+from services.google_drive import DriveConfigurationError, get_drive_service_from_config, get_folder_metadata, probe_folder_upload_with_config
+from services.google_oauth_manager import begin_oauth_flow, complete_oauth_flow, get_oauth_status
 from services.google_sheets import SheetConfigurationError, fetch_form_rows, normalize_spreadsheet_input
 from services.job_runner import start_generation
 from services.pptx_generator import build_pdf_safe_template, build_text_replacements_from_row, convert_document_with_soffice, expand_placeholder_tokens, placeholder_tokens_from_headers, replace_placeholders
@@ -698,6 +699,83 @@ def _cleanup_job_artifacts(job_uuid: str):
         shutil.rmtree(runtime_root, ignore_errors=True)
     except Exception:
         pass
+
+
+def _current_google_oauth_status() -> dict:
+    return get_oauth_status(
+        current_app.config['GOOGLE_TOKEN_PATH'],
+        current_app.config['GOOGLE_OAUTH_CLIENT_SECRET_PATH'],
+        current_app.config.get('GOOGLE_OAUTH_TESTING_WINDOW_DAYS', 7),
+    )
+
+
+@certificates_bp.route('/google-token')
+@login_required
+def google_token_page():
+    return render_template(
+        'google_token.html',
+        token_status=_current_google_oauth_status(),
+        oauth_auth_url=session.get('google_oauth_auth_url', ''),
+    )
+
+
+@certificates_bp.route('/google-token/start', methods=['POST'])
+@login_required
+def google_token_start():
+    try:
+        result = begin_oauth_flow(
+            current_app.config['GOOGLE_OAUTH_CLIENT_SECRET_PATH'],
+            current_app.config['GOOGLE_TOKEN_PATH'],
+            current_app.config['GOOGLE_OAUTH_SESSION_PATH'],
+            list(dict.fromkeys(current_app.config['DRIVE_SCOPES'] + current_app.config['SHEETS_SCOPES'])),
+        )
+        session['google_oauth_auth_url'] = result['auth_url']
+        flash('Sesi pembaruan token dibuat. Buka Google, izinkan akses, lalu tempel URL localhost pada formulir.', 'info')
+    except Exception as exc:
+        current_app.logger.exception('Gagal memulai pembaruan token Google')
+        flash(f'Gagal memulai pembaruan token: {exc}', 'danger')
+    return redirect(url_for('certificates.google_token_page'))
+
+
+@certificates_bp.route('/google-token/exchange', methods=['POST'])
+@login_required
+def google_token_exchange():
+    callback_value = (request.form.get('callback_url') or '').strip()
+    if not callback_value:
+        flash('URL localhost atau authorization code wajib diisi.', 'warning')
+        return redirect(url_for('certificates.google_token_page'))
+    try:
+        complete_oauth_flow(
+            current_app.config['GOOGLE_OAUTH_SESSION_PATH'],
+            callback_value,
+            current_app.config.get('GOOGLE_OAUTH_TESTING_WINDOW_DAYS', 7),
+        )
+        session.pop('google_oauth_auth_url', None)
+        service = get_drive_service_from_config(
+            current_app.config['GOOGLE_TOKEN_PATH'],
+            list(current_app.config['DRIVE_SCOPES']),
+        )
+        account = service.about().get(fields='user(emailAddress)').execute().get('user', {}).get('emailAddress')
+        flash(f'Token Google berhasil diperbarui dan diverifikasi{f" untuk {account}" if account else ""}.', 'success')
+    except Exception as exc:
+        current_app.logger.exception('Gagal menyelesaikan pembaruan token Google')
+        flash(f'Pembaruan token gagal: {exc}', 'danger')
+    return redirect(url_for('certificates.google_token_page'))
+
+
+@certificates_bp.route('/google-token/check', methods=['POST'])
+@login_required
+def google_token_check():
+    try:
+        service = get_drive_service_from_config(
+            current_app.config['GOOGLE_TOKEN_PATH'],
+            list(current_app.config['DRIVE_SCOPES']),
+        )
+        account = service.about().get(fields='user(emailAddress)').execute().get('user', {}).get('emailAddress')
+        flash(f'Token aktif dan akses Google Drive berhasil{f" untuk {account}" if account else ""}.', 'success')
+    except Exception as exc:
+        flash(f'Token perlu diperbarui: {exc}', 'danger')
+    return redirect(url_for('certificates.google_token_page'))
 
 
 @certificates_bp.route('/')

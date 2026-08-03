@@ -37,7 +37,16 @@ class Config:
     ADMIN_PASSWORD = _required_env('ADMIN_PASSWORD')
     ADMIN_DISPLAY_NAME = _required_env('ADMIN_DISPLAY_NAME')
 
-    GOOGLE_TOKEN_PATH = os.getenv('GOOGLE_TOKEN_PATH', str(Path.home() / '.hermes' / 'google_token.json'))
+    GOOGLE_TOKEN_PATH = os.getenv('GOOGLE_TOKEN_PATH', str(INSTANCE_DIR / 'google_oauth_token.json'))
+    GOOGLE_OAUTH_CLIENT_SECRET_PATH = os.getenv(
+        'GOOGLE_OAUTH_CLIENT_SECRET_PATH',
+        str(INSTANCE_DIR / 'google_oauth_client.json'),
+    )
+    GOOGLE_OAUTH_SESSION_PATH = os.getenv(
+        'GOOGLE_OAUTH_SESSION_PATH',
+        str(INSTANCE_DIR / 'google-oauth-refresh-session.json'),
+    )
+    GOOGLE_OAUTH_TESTING_WINDOW_DAYS = int(os.getenv('GOOGLE_OAUTH_TESTING_WINDOW_DAYS', '7'))
     DRIVE_SCOPES = [
         'https://www.googleapis.com/auth/drive.file',
         'https://www.googleapis.com/auth/drive.readonly',

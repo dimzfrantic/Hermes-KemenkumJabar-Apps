@@ -42,6 +42,8 @@ instance/runtime/
 instance/previews/
 instance/jobs/
 instance/auto-events/
+**/instance/google_oauth*.json
+**/instance/google-oauth*.json
 
 # Backups
 backups/

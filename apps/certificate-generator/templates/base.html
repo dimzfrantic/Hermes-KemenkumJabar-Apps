@@ -1097,6 +1097,11 @@
         <a class="navbar-brand" href="{{ url_for('certificates.dashboard') }}">{{ app_name }}</a>
         {% if current_user.is_authenticated %}
         <div class="d-flex align-items-center gap-3 flex-wrap justify-content-end">
+          {% if google_token_status %}
+          <a class="btn btn-sm btn-outline-{{ google_token_status.alert_class }}" href="{{ url_for('certificates.google_token_page') }}">
+            Token Google: {{ google_token_status.status_label }}
+          </a>
+          {% endif %}
           <span class="nav-user-chip"><span>{{ current_user.display_name }}</span></span>
           <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('auth.logout') }}">Logout</a>
         </div>
@@ -1104,6 +1109,12 @@
       </div>
     </nav>
     <main class="container page-wrap">
+      {% if current_user.is_authenticated and google_token_status and google_token_status.status_key in ['warning', 'overdue', 'invalid', 'missing'] and request.endpoint != 'certificates.google_token_page' %}
+      <div class="alert alert-{{ google_token_status.alert_class }} d-flex justify-content-between align-items-center gap-3 flex-wrap mb-3">
+        <span><strong>Token Google:</strong> {{ google_token_status.message }}</span>
+        <a class="btn btn-sm btn-{{ google_token_status.alert_class }}" href="{{ url_for('certificates.google_token_page') }}">Perbarui Token</a>
+      </div>
+      {% endif %}
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
           <div class="mb-3">

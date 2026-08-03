@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+{% block title %}Token Google | {{ app_name }}{% endblock %}
+{% block content %}
+<section class="hero mb-4">
+  <div class="row g-4 align-items-center">
+    <div class="col-lg-8">
+      <div class="eyebrow mb-3">Integrasi Google</div>
+      <h1 class="display-6 fw-bold mb-3">Status Token Google</h1>
+      <p class="hero-copy mb-0">Pantau masa token OAuth mode Testing dan perbarui akses Google Drive serta Google Sheets tanpa menggunakan terminal.</p>
+    </div>
+    <div class="col-lg-4 text-lg-end">
+      <a class="btn btn-outline-secondary" href="{{ url_for('certificates.dashboard') }}">Kembali ke Dashboard</a>
+    </div>
+  </div>
+</section>
+
+<div class="row g-4 mb-4">
+  <div class="col-lg-5">
+    <div class="card app-workspace-card h-100">
+      <div class="card-body p-4 p-lg-5">
+        <div class="d-flex align-items-center justify-content-between gap-3 mb-4">
+          <div>
+            <div class="eyebrow mb-2">Kondisi saat ini</div>
+            <h2 class="h3 fw-bold mb-0">{{ token_status.status_label }}</h2>
+          </div>
+          <span class="badge text-bg-{{ token_status.alert_class }} px-3 py-2">{{ token_status.status_label }}</span>
+        </div>
+
+        <div class="alert alert-{{ token_status.alert_class }}">{{ token_status.message }}</div>
+
+        <div class="surface-soft mt-4">
+          <dl class="row mb-0 g-3">
+            <dt class="col-6 small-muted">Otorisasi terakhir</dt>
+            <dd class="col-6 text-end fw-semibold mb-0">{{ token_status.authorized_at }}</dd>
+            <dt class="col-6 small-muted">Jadwal perbarui</dt>
+            <dd class="col-6 text-end fw-semibold mb-0">{{ token_status.renewal_due_at }}</dd>
+            <dt class="col-6 small-muted">Refresh otomatis</dt>
+            <dd class="col-6 text-end fw-semibold mb-0">{{ 'Aktif' if token_status.has_refresh_token else 'Tidak tersedia' }}</dd>
+            <dt class="col-6 small-muted">OAuth client</dt>
+            <dd class="col-6 text-end fw-semibold mb-0">{{ 'Tersedia' if token_status.client_exists else 'Tidak tersedia' }}</dd>
+          </dl>
+        </div>
+
+        <form method="post" action="{{ url_for('certificates.google_token_check') }}" class="mt-4">
+          <button class="btn btn-outline-primary w-100">Periksa Koneksi Sekarang</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card app-workspace-card h-100">
+      <div class="card-body p-4 p-lg-5">
+        <div class="eyebrow mb-2">Pembaruan berkala</div>
+        <h2 class="h3 fw-bold mb-2">Perbarui Token Google</h2>
+        <p class="small-muted mb-4">Karena OAuth masih berstatus Testing, lakukan pembaruan sebelum jadwal pada panel status. Proses ini tidak mengubah data kegiatan maupun hasil sertifikat.</p>
+
+        {% if not oauth_auth_url %}
+        <form method="post" action="{{ url_for('certificates.google_token_start') }}">
+          <button class="btn btn-primary btn-lg">Mulai Perbarui Token</button>
+        </form>
+        {% else %}
+        <div class="surface-soft mb-4">
+          <div class="section-title mb-2">Langkah 1 — Izinkan akses Google</div>
+          <p class="small-muted mb-3">Buka Google pada tab baru dan login menggunakan akun OAuth aplikasi. Setelah diarahkan ke localhost, halaman boleh gagal terbuka.</p>
+          <a class="btn btn-primary" href="{{ oauth_auth_url }}" target="_blank" rel="noopener noreferrer">Buka Otorisasi Google</a>
+        </div>
+
+        <div class="surface-soft">
+          <div class="section-title mb-2">Langkah 2 — Tempel URL localhost</div>
+          <p class="small-muted mb-3">Salin seluruh URL dari address bar yang dimulai dengan <code>http://localhost/</code>, lalu tempel di bawah ini.</p>
+          <form method="post" action="{{ url_for('certificates.google_token_exchange') }}">
+            <label class="form-label" for="callback-url">URL localhost</label>
+            <textarea class="form-control" id="callback-url" name="callback_url" rows="4" required autocomplete="off" placeholder="http://localhost/?state=...&code=..."></textarea>
+            <button class="btn btn-success mt-3">Simpan dan Verifikasi Token</button>
+          </form>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="surface-soft">
+  <div class="section-title mb-2">Catatan mode Testing</div>
+  <p class="small-muted mb-0">Access token biasa akan diperbarui otomatis oleh aplikasi. Halaman ini diperlukan untuk memperbarui refresh token Testing secara berkala. Jangan mencabut akses aplikasi dari halaman keamanan Google dan jangan menghapus OAuth client yang sedang digunakan.</p>
+</div>
+{% endblock %}
