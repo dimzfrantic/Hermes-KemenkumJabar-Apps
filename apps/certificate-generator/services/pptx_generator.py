@@ -312,16 +312,21 @@ def _validate_placeholder_shapes(prs: Presentation, placeholders: list[str]) -> 
     found = _find_placeholder_shapes(prs, placeholders)
     if not found:
         raise RuntimeError(
-            'Placeholder template tidak ditemukan. Pastikan template PPTX memuat placeholder yang sama persis dengan header sumber data, misalnya {{Nama Lengkap}}.'
+            'Tidak ada placeholder template yang cocok dengan header Excel. Gunakan format {{Nama Kolom}} sesuai nama kolom Excel.'
         )
 
+    matched_tokens = [
+        token
+        for token in placeholders
+        if any(token in prs.slides[slide_index].shapes[shape_index].text for slide_index, shape_index in found)
+    ]
     for slide_index, shape_index in found:
         shape = prs.slides[slide_index].shapes[shape_index]
         if not getattr(shape, 'has_text_frame', False):
             raise RuntimeError('Placeholder harus berada pada textbox teks, bukan pada shape/grafik lain.')
         text = shape.text or ''
         cleaned = text
-        for token in placeholders:
+        for token in matched_tokens:
             cleaned = cleaned.replace(token, '')
         if cleaned.strip():
             raise RuntimeError(

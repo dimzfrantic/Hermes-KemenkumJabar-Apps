@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import re
 import shutil
+from pptx import Presentation
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -15,7 +17,7 @@ from googleapiclient.errors import HttpError
 from extensions import db
 from models import AutoCertificateEvent, AutoCertificateItem, AutoCertificateRun, GenerationJob, JobRowResult
 from services.certificate_photos import PHOTO_PLACEHOLDER, detect_photo_column, prepare_certificate_photo
-from services.auto_certificate import AutoCertificateError, reset_processing_items, retry_failed_items, sync_event, validate_event_configuration
+from services.auto_certificate import AutoCertificateError, _prepare_event_template as _prepare_auto_event_template, detect_form_columns, reset_processing_items, retry_failed_items, sync_event, validate_event_configuration
 from services.excel_parser import WorkbookValidationError, load_participants
 from services.google_drive import DriveConfigurationError, get_drive_service_from_config, get_folder_metadata, probe_folder_upload_with_config
 from services.google_oauth_manager import begin_oauth_flow, complete_oauth_flow, get_oauth_status
@@ -327,6 +329,25 @@ def _template_placeholders(headers: list[str] | None = None) -> list[str]:
     return placeholders
 
 
+def _placeholder_options_for_template(template_path: str, headers: list[str]) -> list[str]:
+    options: list[str] = []
+    try:
+        prs = Presentation(template_path)
+        for slide in prs.slides:
+            for shape in slide.shapes:
+                if not getattr(shape, 'has_text_frame', False):
+                    continue
+                for token in re.findall(r'\{\{[^{}]+\}\}', shape.text or ''):
+                    if token not in options:
+                        options.append(token)
+    except Exception as exc:
+        current_app.logger.warning('Placeholder template tidak dapat dibaca untuk form mapping: %s', exc)
+    for token in _template_placeholders(headers):
+        if token not in options:
+            options.append(token)
+    return options
+
+
 def _build_sample_conversion_preview(template_path: str, parsed) -> dict | None:
     name_column, institution_column = _detect_preview_columns(parsed.headers)
     sample_row = next((row for row in parsed.rows if any((str(value).strip() for key, value in row.items() if not str(key).startswith('_')))), None)
@@ -341,49 +362,56 @@ def _build_sample_conversion_preview(template_path: str, parsed) -> dict | None:
     working_dir = preview_root / 'build'
     filled_pptx_path = preview_root / 'sample-preview.pptx'
 
-    build_pdf_safe_template(
-        template_path,
-        str(safe_template_path),
-        placeholders=_template_placeholders(parsed.headers),
-        working_dir=str(working_dir),
-        soffice_path=current_app.config.get('SOFFICE_PATH', ''),
-        cleanup_working_dir=True,
-    )
-    photo_column = detect_photo_column(parsed.headers)
-    image_replacements = {}
-    if photo_column and sample_row.get(photo_column):
-        try:
-            photo_path = prepare_certificate_photo(
-                sample_row.get(photo_column),
-                preview_root,
-                google_token_path=current_app.config['GOOGLE_TOKEN_PATH'],
-                drive_scopes=list(current_app.config['DRIVE_SCOPES']),
-                row_number=sample_row.get('_row_number'),
-                use_cached_service=True,
-            )
-            if photo_path:
-                image_replacements[PHOTO_PLACEHOLDER] = photo_path
-        except Exception:
-            image_replacements = {}
+    try:
+        build_pdf_safe_template(
+            template_path,
+            str(safe_template_path),
+            placeholders=_template_placeholders(parsed.headers),
+            working_dir=str(working_dir),
+            soffice_path=current_app.config.get('SOFFICE_PATH', ''),
+            cleanup_working_dir=True,
+        )
+        photo_column = detect_photo_column(parsed.headers)
+        image_replacements = {}
+        if photo_column and sample_row.get(photo_column):
+            try:
+                photo_path = prepare_certificate_photo(
+                    sample_row.get(photo_column),
+                    preview_root,
+                    google_token_path=current_app.config['GOOGLE_TOKEN_PATH'],
+                    drive_scopes=list(current_app.config['DRIVE_SCOPES']),
+                    row_number=sample_row.get('_row_number'),
+                    use_cached_service=True,
+                )
+                if photo_path:
+                    image_replacements[PHOTO_PLACEHOLDER] = photo_path
+            except Exception as photo_exc:
+                current_app.logger.warning('Foto preview dilewati: %s', photo_exc)
 
-    replace_placeholders(
-        str(safe_template_path),
-        str(filled_pptx_path),
-        build_text_replacements_from_row(sample_row),
-        image_replacements=image_replacements,
-    )
-    preview_pdf_path = Path(convert_document_with_soffice(
-        str(filled_pptx_path),
-        str(preview_root),
-        'pdf',
-        current_app.config.get('SOFFICE_PATH', ''),
-    ))
-    preview_png_path = Path(convert_document_with_soffice(
-        str(preview_pdf_path),
-        str(preview_root),
-        'png',
-        current_app.config.get('SOFFICE_PATH', ''),
-    ))
+        replace_placeholders(
+            str(safe_template_path),
+            str(filled_pptx_path),
+            build_text_replacements_from_row(sample_row),
+            image_replacements=image_replacements,
+        )
+        preview_pdf_path = Path(convert_document_with_soffice(
+            str(filled_pptx_path),
+            str(preview_root),
+            'pdf',
+            current_app.config.get('SOFFICE_PATH', ''),
+        ))
+        preview_png_path = Path(convert_document_with_soffice(
+            str(preview_pdf_path),
+            str(preview_root),
+            'png',
+            current_app.config.get('SOFFICE_PATH', ''),
+        ))
+    except Exception as exc:
+        current_app.logger.warning('Preview konversi dilewati saat validasi template: %s', exc, exc_info=True)
+        return {
+            'available': False,
+            'message': f'Preview belum dapat dibuat, tetapi validasi data tetap dapat dilanjutkan. Penyebab: {exc}',
+        }
 
     return {
         'available': True,
@@ -447,6 +475,7 @@ def _render_mapping_step(
     selected_name_column: str = '',
     selected_institution_column: str = '',
     selected_photo_column: str = '',
+    selected_mapping: dict | None = None,
     drive_validation: dict | None = None,
     excel_format_hint: dict | None = None,
     sample_conversion_preview: dict | None = None,
@@ -467,6 +496,9 @@ def _render_mapping_step(
         selected_name_column=selected_name_column,
         selected_institution_column=selected_institution_column,
         selected_photo_column=selected_photo_column or detect_photo_column(parsed.headers) or '',
+        placeholder_options=_placeholder_options_for_template(staged_template_path, parsed.headers),
+        selected_mapping={},
+        sample_row=parsed.rows[0] if parsed.rows else {},
         drive_validation=drive_validation,
         excel_format_hint=excel_format_hint,
         sample_conversion_preview=sample_conversion_preview,
@@ -575,20 +607,11 @@ def _event_summary(event: AutoCertificateEvent) -> dict:
     }
 
 
-def _save_auto_event_template(file_storage, event_uuid: str, headers: list[str]) -> tuple[str, str]:
+def _save_auto_event_template(file_storage, event_uuid: str) -> tuple[str, str]:
     event_root = ensure_dir(Path(current_app.config['AUTO_EVENT_DIR']) / event_uuid)
     filename = slugify_filename(Path(file_storage.filename or 'template.pptx').stem, default='template')
     original_path = event_root / 'template-original.pptx'
-    safe_path = event_root / 'template-safe.pptx'
     file_storage.save(original_path)
-    build_pdf_safe_template(
-        str(original_path),
-        str(safe_path),
-        placeholders=placeholder_tokens_from_headers(headers) + [PHOTO_PLACEHOLDER],
-        working_dir=str(event_root / '_safe_build'),
-        soffice_path=current_app.config.get('SOFFICE_PATH', ''),
-        cleanup_working_dir=True,
-    )
     return str(original_path), f'{filename}.pptx'
 
 
@@ -837,32 +860,78 @@ def auto_event_new():
         }
         for event in events
     ]
+    auto_step = (request.form.get('auto_step') or '').strip() or 'validate'
     if request.method == 'POST':
-        event_uuid = ''
+        event_uuid = (request.form.get('event_uuid') or '').strip()
         try:
-            payload = _validate_auto_event_form(request.form, request.files)
-            event_uuid = str(uuid4())
-            parsed = fetch_form_rows(payload['spreadsheet_id'], worksheet_name=payload['worksheet_name'])
-            template_path, template_filename = _save_auto_event_template(payload['template_file'], event_uuid, parsed.headers)
-            validation = validate_event_configuration(parsed, template_path)
-            drive_validation = _build_drive_validation(request.form.get('drive_folder_id') or payload['drive_folder_id'], payload['drive_folder_id'])
-            columns = validation['columns']
+            if auto_step == 'validate':
+                payload = _validate_auto_event_form(request.form, request.files)
+                event_uuid = str(uuid4())
+                parsed = fetch_form_rows(payload['spreadsheet_id'], worksheet_name=payload['worksheet_name'])
+                template_path, template_filename = _save_auto_event_template(payload['template_file'], event_uuid)
+                drive_validation = _build_drive_validation(request.form.get('drive_folder_id') or payload['drive_folder_id'], payload['drive_folder_id'])
+                return render_template(
+                    'auto_event_form.html',
+                    defaults=request.form,
+                    automation_events=automation_events,
+                    auto_step='mapping',
+                    event_uuid=event_uuid,
+                    template_path=template_path,
+                    template_filename=template_filename,
+                    parsed_headers=parsed.headers,
+                    sample_row=parsed.rows[0] if parsed.rows else {},
+                    placeholder_options=_placeholder_options_for_template(template_path, parsed.headers),
+                    selected_mapping={},
+                    spreadsheet_id=payload['spreadsheet_id'],
+                    spreadsheet_title=parsed.spreadsheet_title,
+                    selected_sheet=parsed.selected_sheet,
+                    drive_folder_id=payload['drive_folder_id'],
+                    drive_folder_name=drive_validation.get('folder_name') or payload['drive_folder_id'],
+                    polling_interval_minutes=payload['polling_interval_minutes'],
+                )
+
+            template_path = (request.form.get('template_path') or '').strip()
+            template_filename = (request.form.get('template_filename') or '').strip()
+            spreadsheet_id = (request.form.get('spreadsheet_id') or '').strip()
+            selected_sheet = (request.form.get('worksheet_name') or '').strip() or None
+            drive_folder_id = (request.form.get('drive_folder_id') or '').strip()
+            name_column = (request.form.get('name_column') or '').strip()
+            headers = [header for header in request.form.getlist('sheet_headers') if header.strip()]
+            column_mapping = {
+                header: (request.form.get(f'mapping[{header}]') or '').strip()
+                for header in headers
+            }
+            if not event_uuid or not template_path or not Path(template_path).exists():
+                raise AutoCertificateError('File hasil validasi tidak tersedia lagi. Silakan ulangi validasi konfigurasi kegiatan.')
+            if not name_column or name_column not in headers:
+                raise AutoCertificateError('Pilih kolom Google Sheet yang menjadi sumber nama file sertifikat.')
+            parsed = fetch_form_rows(spreadsheet_id, worksheet_name=selected_sheet)
+            if parsed.headers != headers:
+                raise AutoCertificateError(
+                    'Kolom Google Sheet berubah setelah validasi. Silakan ulangi validasi agar pemetaan memakai kolom terbaru.'
+                )
+            photo_column = next(
+                (source for source, target in column_mapping.items() if target == PHOTO_PLACEHOLDER),
+                None,
+            )
+            timestamp_column = detect_form_columns(parsed.headers).get('timestamp')
             event = AutoCertificateEvent(
                 event_uuid=event_uuid,
-                name=payload['name'],
-                spreadsheet_id=payload['spreadsheet_id'],
-                spreadsheet_title=parsed.spreadsheet_title,
+                name=(request.form.get('name') or '').strip(),
+                spreadsheet_id=spreadsheet_id,
+                spreadsheet_title=(request.form.get('spreadsheet_title') or parsed.spreadsheet_title),
                 worksheet_name=parsed.selected_sheet,
-                drive_folder_id=payload['drive_folder_id'],
-                drive_folder_name=drive_validation.get('folder_name') or payload['drive_folder_id'],
+                drive_folder_id=drive_folder_id,
+                drive_folder_name=(request.form.get('drive_folder_name') or drive_folder_id),
                 template_filename=template_filename,
-                name_column=columns.get('name') or 'Nama Lengkap',
-                email_column=columns.get('email'),
-                institution_column=columns.get('institution'),
-                phone_column=columns.get('phone'),
-                photo_column=columns.get('photo'),
-                timestamp_column=columns.get('timestamp'),
-                polling_interval_minutes=payload['polling_interval_minutes'],
+                name_column=name_column,
+                email_column=None,
+                institution_column=None,
+                phone_column=None,
+                photo_column=photo_column,
+                timestamp_column=timestamp_column,
+                mapping_json=json.dumps(column_mapping, ensure_ascii=False),
+                polling_interval_minutes=max(int(request.form.get('polling_interval_minutes') or 5), 1),
                 status='active',
                 enabled=True,
                 total_responses=0,
@@ -873,8 +942,10 @@ def auto_event_new():
                 next_run_at=datetime.utcnow(),
             )
             db.session.add(event)
+            db.session.flush()
+            _prepare_auto_event_template(event, parsed.headers)
             db.session.commit()
-            flash('Kegiatan auto-generate berhasil dibuat dan langsung diaktifkan.', 'success')
+            flash('Pemetaan berhasil disimpan. Kegiatan auto-generate langsung diaktifkan.', 'success')
             return redirect(url_for('certificates.auto_event_new'))
         except (AutoCertificateError, SheetConfigurationError, DriveConfigurationError, RuntimeError, RefreshError, HttpError, ValueError) as exc:
             db.session.rollback()
@@ -887,22 +958,14 @@ def auto_event_new():
             if event_uuid:
                 _cleanup_auto_event_artifacts(event_uuid)
             current_app.logger.warning('Google API transport error while creating automation event: %s', exc)
-            flash(
-                'Server tidak dapat terhubung ke layanan Google saat ini. '
-                'Periksa koneksi internet / DNS server lalu coba lagi.',
-                'danger',
-            )
+            flash('Server tidak dapat terhubung ke layanan Google saat ini. Periksa koneksi internet / DNS server lalu coba lagi.', 'danger')
             return render_template('auto_event_form.html', defaults=request.form, automation_events=automation_events)
         except Exception as exc:
             db.session.rollback()
             if event_uuid:
                 _cleanup_auto_event_artifacts(event_uuid)
             current_app.logger.exception('Unhandled error while creating automation event')
-            flash(
-                'Terjadi error internal saat menyimpan dan mengaktifkan kegiatan. '
-                f'Detail teknis: {exc}',
-                'danger',
-            )
+            flash(f'Terjadi error internal saat menyimpan dan mengaktifkan kegiatan. Detail teknis: {exc}', 'danger')
             return render_template('auto_event_form.html', defaults=request.form, automation_events=automation_events)
     defaults = {
         'polling_interval_minutes': current_app.config.get('AUTO_EVENT_DEFAULT_INTERVAL_MINUTES', 5),
@@ -991,6 +1054,11 @@ def new_job():
         name_column = (request.form.get('name_column') or '').strip()
         institution_column = (request.form.get('institution_column') or '').strip()
         photo_column = (request.form.get('photo_column') or '').strip()
+        column_mapping = {
+            header: (request.form.get(f'mapping[{header}]') or '').strip()
+            for header in (request.form.getlist('excel_headers') or [])
+            if header.strip()
+        }
 
         try:
             normalized_drive_folder_id = _normalize_drive_folder_input(drive_folder_id)
@@ -1009,7 +1077,8 @@ def new_job():
                     selected_name_column=name_column,
                     selected_institution_column=institution_column,
                     selected_photo_column=photo_column,
-                    drive_validation=_invalid_drive_validation(drive_folder_id, '', str(exc)),
+                    selected_mapping=column_mapping,
+                    drive_validation=_invalid_drive_validation(drive_folder_id, normalized_drive_folder_id, str(exc)),
                     excel_format_hint=_build_excel_format_hint(parsed.headers),
                     sample_conversion_preview=sample_conversion_preview,
                 )
@@ -1105,8 +1174,8 @@ def new_job():
                 drive_validation = _build_drive_validation(drive_folder_id, normalized_drive_folder_id)
                 excel_format_hint = _build_excel_format_hint(parsed.headers)
                 sample_conversion_preview = _build_sample_conversion_preview(staged_template_path, parsed)
-                if not name_column or not institution_column:
-                    flash('Silakan pilih kolom nama dan kolom instansi.', 'danger')
+                if not name_column:
+                    flash('Pilih kolom Excel yang menjadi sumber nama file sertifikat.', 'danger')
                     return _render_mapping_step(
                         parsed=parsed,
                         drive_folder_id=normalized_drive_folder_id,
@@ -1114,16 +1183,19 @@ def new_job():
                         staged_workbook_path=staged_workbook_path,
                         original_template_name=original_template_name,
                         original_excel_name=original_excel_name,
+                        selected_mapping=column_mapping,
                         drive_validation=drive_validation,
                         excel_format_hint=excel_format_hint,
                         sample_conversion_preview=sample_conversion_preview,
                     )
-                missing_columns = [col for col in [name_column, institution_column, photo_column] if col and col not in parsed.headers]
-                if missing_columns:
+                if name_column not in parsed.headers:
                     raise WorkbookValidationError(
-                        f"Kolom pilihan tidak ditemukan pada Excel. Sistem mendeteksi header: {', '.join(parsed.headers)}. Sesuaikan dengan format contoh atau pilih ulang kolom yang tersedia."
+                        f"Kolom nama pilihan tidak ditemukan pada Excel. Sistem mendeteksi header: {', '.join(parsed.headers)}."
                     )
-
+                if institution_column and institution_column not in parsed.headers:
+                    raise WorkbookValidationError(
+                        f"Kolom instansi pilihan tidak ditemukan pada Excel. Sistem mendeteksi header: {', '.join(parsed.headers)}."
+                    )
                 job_uuid = Path(staged_template_path).parent.name
                 staged_root = Path(current_app.config['JOB_DIR']) / job_uuid
                 staged_root.mkdir(parents=True, exist_ok=True)
@@ -1132,14 +1204,20 @@ def new_job():
                 final_workbook_path = staged_root / 'participants.xlsx'
                 safe_build_root = staged_root / '_pdf_safe_build'
                 shutil.copy2(staged_template_path, final_original_template_path)
-                build_pdf_safe_template(
-                    staged_template_path,
-                    str(final_template_path),
-                    placeholders=_template_placeholders(parsed.headers),
-                    working_dir=str(safe_build_root),
-                    soffice_path=current_app.config.get('SOFFICE_PATH', ''),
-                    cleanup_working_dir=True,
-                )
+                try:
+                    build_pdf_safe_template(
+                        staged_template_path,
+                        str(final_template_path),
+                        placeholders=_template_placeholders(parsed.headers) + [
+                            token for token in column_mapping.values() if token
+                        ],
+                        working_dir=str(safe_build_root),
+                        soffice_path=current_app.config.get('SOFFICE_PATH', ''),
+                        cleanup_working_dir=True,
+                    )
+                except RuntimeError as preview_exc:
+                    current_app.logger.warning('Mode aman PDF dilewati; template tetap dipakai apa adanya: %s', preview_exc)
+                    shutil.copy2(staged_template_path, final_template_path)
                 shutil.copy2(staged_workbook_path, final_workbook_path)
 
                 job = GenerationJob(
@@ -1148,9 +1226,10 @@ def new_job():
                     original_excel_name=original_excel_name or Path(staged_workbook_path).name,
                     drive_folder_id=normalized_drive_folder_id,
                     selected_sheet=parsed.selected_sheet,
-                    name_column=name_column,
-                    institution_column=institution_column,
-                    photo_column=photo_column or None,
+                    name_column=name_column or '',
+                    institution_column=institution_column or '',
+                    photo_column=photo_column or '',
+                    mapping_json=json.dumps(column_mapping, ensure_ascii=False),
                     total_rows=len(parsed.rows),
                     status='validated',
                     cancel_requested=False,
@@ -1178,6 +1257,7 @@ def new_job():
                         selected_name_column=name_column,
                         selected_institution_column=institution_column,
                         selected_photo_column=photo_column,
+                        selected_mapping=column_mapping,
                         drive_validation=_invalid_drive_validation(drive_folder_id, normalized_drive_folder_id, str(exc)),
                         excel_format_hint=_build_excel_format_hint(parsed.headers),
                         sample_conversion_preview=_build_sample_conversion_preview(staged_template_path, parsed) if Path(staged_template_path).exists() else None,

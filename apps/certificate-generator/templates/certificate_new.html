@@ -115,12 +115,12 @@
         <div class="mb-3">
           <div class="eyebrow mb-2">Konfigurasi peserta</div>
           <h2 class="h3 fw-bold mb-1">Pemetaan data untuk placeholder sertifikat</h2>
-          <p class="small-muted mb-0">Setiap header Excel otomatis tersedia sebagai placeholder dengan nama yang sama persis, misalnya header Rumah dipanggil sebagai {{ '{{Rumah}}' }}.</p>
+          <p class="small-muted mb-0">Semua kolom pada Excel otomatis tersedia sebagai placeholder dengan nama yang sama persis, misalnya header Rumah dipanggil sebagai {{ '{{Rumah}}' }}. Pemetaan di bawah hanya untuk kebutuhan nama file, ringkasan, dan foto; semuanya boleh dikosongkan.</p>
         </div>
         <div class="row g-4">
-          <div class="col-md-4">
+          <div class="col-lg-12">
             <label class="form-label">Sheet Excel</label>
-            <select class="form-select" name="sheet_name" required>
+            <select class="form-select" name="sheet_name">
               {% if sheet_names %}
                 {% for sheet in sheet_names %}
                 <option value="{{ sheet }}" {% if sheet == selected_sheet %}selected{% endif %}>{{ sheet }}</option>
@@ -130,33 +130,48 @@
               {% endif %}
             </select>
           </div>
-          <div class="col-md-4">
-            <label class="form-label">Kolom utama untuk nama peserta/file</label>
-            <select class="form-select" name="name_column" required>
-              <option value="">Pilih kolom nama</option>
-              {% for header in workbook_headers or [] %}
-              <option value="{{ header }}" {% if (selected_name_column or request.form.get('name_column')) == header %}selected{% endif %}>{{ header }}</option>
-              {% endfor %}
-            </select>
+
+          <div class="col-12">
+            <div class="validation-summary-card">
+              <label class="form-label" for="name-column">Sumber nama file sertifikat</label>
+              <select class="form-select" id="name-column" name="name_column" required>
+                <option value="">Pilih kolom nama peserta</option>
+                {% for header in workbook_headers or [] %}
+                <option value="{{ header }}" {% if (selected_name_column or request.form.get('name_column')) == header %}selected{% endif %}>{{ header }}</option>
+                {% endfor %}
+              </select>
+              <div class="small-muted mt-2">Nilai pada kolom ini hanya dipakai untuk nama file. Contoh: kolom <strong>Nama Lengkap</strong> berisi Dodot Sugiarto akan menghasilkan <code>Sertifikat Dodot Sugiarto.pdf</code>. Pilihan ini tidak mengubah pemetaan placeholder sertifikat.</div>
+            </div>
           </div>
-          <div class="col-md-4">
-            <label class="form-label">Kolom utama untuk instansi/ringkasan</label>
-            <select class="form-select" name="institution_column" required>
-              <option value="">Pilih kolom instansi</option>
-              {% for header in workbook_headers or [] %}
-              <option value="{{ header }}" {% if (selected_institution_column or request.form.get('institution_column')) == header %}selected{% endif %}>{{ header }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="col-md-4">
-            <label class="form-label">Kolom Foto → {{ '{{foto}}' }} <span class="text-muted">(opsional)</span></label>
-            <select class="form-select" name="photo_column">
-              <option value="">Tanpa foto</option>
-              {% for header in workbook_headers or [] %}
-              <option value="{{ header }}" {% if (selected_photo_column or request.form.get('photo_column')) == header %}selected{% endif %}>{{ header }}</option>
-              {% endfor %}
-            </select>
-            <div class="small-muted mt-2">Isi kolom dapat berupa link file Google Drive, hasil upload Google Form, atau path file lokal di server.</div>
+
+          <div class="col-12">
+            <div class="validation-summary-card">
+              <div class="validation-summary-label">Pemetaan kolom Excel ke placeholder template</div>
+              <div class="validation-summary-note mt-2">Setiap kolom Excel menjadi satu baris form. Pilih placeholder tujuan dari template untuk kolom tersebut, atau pilih “Tidak digunakan”. Semua baris bersifat opsional.</div>
+              <div class="table-responsive mt-3">
+                <table class="table align-middle mb-0">
+                  <thead><tr><th>Kolom Excel</th><th>Contoh data</th><th>Isi ke placeholder template</th></tr></thead>
+                  <tbody>
+                  {% for header in workbook_headers or [] %}
+                  <tr>
+                    <td><strong>{{ header }}</strong><input type="hidden" name="excel_headers" value="{{ header }}"></td>
+                    <td class="small-muted">{{ sample_row.get(header, '-') if sample_row else '-' }}</td>
+                    <td>
+                      <select class="form-select" name="mapping[{{ header }}]">
+                        <option value="">Tidak digunakan</option>
+                        {% for option in placeholder_options or [] %}
+                        <option value="{{ option }}" {% if (selected_mapping or {}).get(header, '') == option %}selected{% endif %}>{{ option }}</option>
+                        {% endfor %}
+                      </select>
+                    </td>
+                  </tr>
+                  {% else %}
+                  <tr><td colspan="3" class="small-muted">Belum ada kolom Excel yang terdeteksi.</td></tr>
+                  {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
       </div>

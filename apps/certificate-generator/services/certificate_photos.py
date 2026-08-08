@@ -3,9 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import uuid4
 
+from googleapiclient.errors import HttpError
 from PIL import Image, ImageOps
 
-from services.google_drive import download_drive_file_with_config, extract_drive_file_id
+from services.google_drive import DriveConfigurationError, download_drive_file_with_config, extract_drive_file_id
 from services.storage import slugify_filename
 
 PHOTO_PLACEHOLDER = '{{foto}}'
@@ -72,13 +73,28 @@ def prepare_certificate_photo(
     if local_path.exists() and local_path.is_file():
         source_path = local_path
     elif extract_drive_file_id(ref):
-        source_path = Path(download_drive_file_with_config(
-            ref,
-            str(downloaded_path),
-            google_token_path,
-            drive_scopes,
-            use_cached_service=use_cached_service,
-        ))
+        try:
+            source_path = Path(download_drive_file_with_config(
+                ref,
+                str(downloaded_path),
+                google_token_path,
+                drive_scopes,
+                use_cached_service=use_cached_service,
+            ))
+        except HttpError as exc:
+            status = getattr(getattr(exc, 'resp', None), 'status', None)
+            file_id = extract_drive_file_id(ref) or 'tidak diketahui'
+            if status == 404:
+                raise DriveConfigurationError(
+                    f'Foto peserta tidak ditemukan di Google Drive (file id: {file_id}). '
+                    'Kemungkinan file sudah dihapus, link upload Google Form berubah, atau akun Google server tidak punya akses ke file tersebut.'
+                ) from exc
+            if status == 403:
+                raise DriveConfigurationError(
+                    f'Foto peserta tidak bisa diakses di Google Drive (file id: {file_id}). '
+                    'Pastikan file upload masih ada dan akun Google server memiliki izin untuk membacanya.'
+                ) from exc
+            raise
     else:
         raise RuntimeError('Foto peserta belum dapat dibaca. Gunakan link Google Drive/file upload Google Form atau path file lokal yang valid.')
 

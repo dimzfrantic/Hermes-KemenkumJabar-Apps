@@ -14,9 +14,11 @@ from models import AdminUser
 SCHEMA_COLUMNS = {
     'generation_jobs': {
         'photo_column': 'VARCHAR(255)',
+        'mapping_json': 'TEXT',
     },
     'auto_certificate_events': {
         'photo_column': 'VARCHAR(255)',
+        'mapping_json': 'TEXT',
     },
     'auto_certificate_items': {
         'photo_url': 'TEXT',

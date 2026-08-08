@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import threading
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
@@ -142,7 +143,7 @@ def _process_participant(
     drive_scopes: list[str],
     soffice_path: str,
 ) -> dict:
-    base_name = slugify_filename(f'Sertifikat - {name}', default=f'sertifikat-{row_number}')
+    base_name = slugify_filename(f'Sertifikat {name}', default=f'Sertifikat Peserta {row_number}')
     last_error = None
     for attempt in range(retry_count + 1):
         pptx_path = runtime_root / f'{uuid4().hex}-{base_name}.pptx'
@@ -252,21 +253,22 @@ def _run_generation(app, job_id: int, template_path: str, workbook_path: str):
                 row_number = row.get('_row_number', 0)
                 if row_number in successful_rows:
                     continue
-                name = (row.get(job.name_column) or '').strip()
-                institution = (row.get(job.institution_column) or '').strip()
+                name = (row.get(job.name_column) or '').strip() if job.name_column else ''
+                institution = (row.get(job.institution_column) or '').strip() if job.institution_column else ''
                 photo_ref = (row.get(job.photo_column) or '').strip() if job.photo_column else ''
-                if not name or not institution:
-                    _record_row_result(job, {
-                        'ok': False,
-                        'row_number': row_number,
-                        'participant_name': name or None,
-                        'institution_name': institution or None,
-                        'output_filename': None,
-                        'message': 'Nama atau instansi kosong.',
-                    })
-                    continue
                 text_replacements = build_text_replacements_from_row(row)
-                participants.append((row_number, name, institution, photo_ref, text_replacements))
+                try:
+                    mapping = json.loads(job.mapping_json or '{}')
+                except (TypeError, ValueError):
+                    mapping = {}
+                if mapping:
+                    text_replacements = {
+                        target: ('' if row.get(source) is None else str(row.get(source)).strip())
+                        for source, target in mapping.items()
+                        if target
+                    }
+                display_name = name or institution or f'Peserta {row_number}'
+                participants.append((row_number, display_name, institution, photo_ref, text_replacements))
 
             runtime_root = ensure_dir(Path(current_app.config['RUNTIME_DIR']) / job.job_uuid)
             max_workers = max(1, int(current_app.config.get('MAX_PARALLEL_WORKERS', 3)))
@@ -337,7 +339,7 @@ def _run_generation(app, job_id: int, template_path: str, workbook_path: str):
                                 'row_number': row_number,
                                 'participant_name': name,
                                 'institution_name': institution,
-                                'output_filename': f'Sertifikat - {name}.pdf',
+                                'output_filename': f'Sertifikat {name}.pdf',
                                 'message': str(exc),
                                 'attempts': retry_count + 1,
                             }

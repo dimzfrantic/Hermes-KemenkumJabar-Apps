@@ -14,6 +14,7 @@
   </div>
 </section>
 
+{% if auto_step != 'mapping' %}
 <div class="card app-workspace-card mb-4">
   <div class="card-body p-4 p-lg-5">
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
@@ -61,10 +62,62 @@
     {% endif %}
   </div>
 </div>
+{% endif %}
 
 <div class="card app-workspace-card">
   <div class="card-body p-4 p-lg-5">
     <form method="post" enctype="multipart/form-data" class="app-form-shell" id="auto-event-form">
+      {% if auto_step == 'mapping' %}
+      <input type="hidden" name="auto_step" value="mapping">
+      <input type="hidden" name="event_uuid" value="{{ event_uuid }}">
+      <input type="hidden" name="template_path" value="{{ template_path }}">
+      <input type="hidden" name="template_filename" value="{{ template_filename }}">
+      <input type="hidden" name="name" value="{{ defaults.get('name', '') }}">
+      <input type="hidden" name="spreadsheet_id" value="{{ spreadsheet_id }}">
+      <input type="hidden" name="spreadsheet_title" value="{{ spreadsheet_title }}">
+      <input type="hidden" name="worksheet_name" value="{{ selected_sheet }}">
+      <input type="hidden" name="drive_folder_id" value="{{ drive_folder_id }}">
+      <input type="hidden" name="drive_folder_name" value="{{ drive_folder_name }}">
+      <input type="hidden" name="polling_interval_minutes" value="{{ polling_interval_minutes }}">
+      <div class="surface-soft app-form-group auto-mapping-panel">
+        <div class="app-group-heading">
+          <div class="section-title mb-1">Pemetaan data auto generate</div>
+          <p class="small-muted mb-0">Konfigurasi kegiatan tetap memakai data yang sudah divalidasi. Pilih sumber nama file dan petakan kolom Google Sheet ke placeholder template. Semua pemetaan default Tidak digunakan.</p>
+        </div>
+        <div class="auto-name-source mb-3">
+          <div class="row g-3 align-items-end">
+            <div class="col-xl-5 col-lg-6">
+              <label class="form-label" for="auto-name-column">Sumber nama file sertifikat</label>
+              <select class="form-select" id="auto-name-column" name="name_column" required>
+                <option value="">Pilih kolom nama peserta</option>
+                {% for header in parsed_headers or [] %}<option value="{{ header }}">{{ header }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-xl-7 col-lg-6">
+              <div class="small-muted auto-name-source-note">Nilai kolom terpilih digunakan untuk nama PDF dan tetap disertai timestamp, misalnya <code>Sertifikat Dodot Sugiarto - 01012026103000.pdf</code>.</div>
+            </div>
+          </div>
+        </div>
+        <div class="table-responsive auto-mapping-table-wrap">
+          <table class="table align-middle mb-0 auto-mapping-table">
+            <thead><tr><th>Kolom Google Sheet</th><th>Contoh data</th><th>Isi ke placeholder template</th></tr></thead>
+            <tbody>
+            {% for header in parsed_headers or [] %}
+            <tr>
+              <td><strong>{{ header }}</strong><input type="hidden" name="sheet_headers" value="{{ header }}"></td>
+              <td class="small-muted">{{ sample_row.get(header, '-') if sample_row else '-' }}</td>
+              <td><select class="form-select" name="mapping[{{ header }}]">
+                <option value="">Tidak digunakan</option>
+                {% for option in placeholder_options or [] %}<option value="{{ option }}">{{ option }}</option>{% endfor %}
+              </select></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% else %}
+      <input type="hidden" name="auto_step" value="validate">
       <div class="surface-soft app-form-group">
         <div class="app-group-heading">
           <div class="section-title mb-1">Konfigurasi kegiatan</div>
@@ -97,6 +150,7 @@
           </div>
         </div>
       </div>
+      {% endif %}
       <div id="auto-event-progress" class="alert alert-primary mt-4 mb-0 d-none" role="status">
         <div class="d-flex align-items-center gap-3">
           <div class="spinner-border spinner-border-sm" aria-hidden="true"></div>
@@ -106,9 +160,9 @@
           </div>
         </div>
       </div>
-      <div class="d-flex gap-3 flex-wrap app-form-actions mt-2">
+      <div class="d-flex gap-3 flex-wrap app-form-actions auto-event-actions">
         <button class="btn btn-primary" type="submit" id="auto-event-submit-button">
-          <span class="default-label">Simpan & Aktifkan</span>
+          <span class="default-label">{% if auto_step == 'mapping' %}Simpan Pemetaan & Aktifkan{% else %}Validasi & Lanjutkan{% endif %}</span>
           <span class="loading-label d-none"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Memproses...</span>
         </button>
         <a class="btn btn-outline-secondary" href="{{ url_for('certificates.dashboard') }}">Batal</a>

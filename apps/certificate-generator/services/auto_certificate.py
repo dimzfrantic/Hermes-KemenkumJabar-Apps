@@ -36,8 +36,24 @@ class AutoCertificateError(RuntimeError):
 
 
 def _normalize_certificate_name(value: str | None) -> str:
-    text = ' '.join((value or '').split())
-    return text.upper()
+    return ' '.join((value or '').split())
+
+
+def _filename_timestamp(item: AutoCertificateItem) -> str:
+    source_value = item.submitted_at or ''
+    if not source_value and item.source_data_json:
+        try:
+            source_data = json.loads(item.source_data_json)
+        except (TypeError, ValueError):
+            source_data = {}
+        if isinstance(source_data, dict):
+            timestamp_header = detect_form_columns(list(source_data.keys())).get('timestamp')
+            source_value = source_data.get(timestamp_header, '') if timestamp_header else ''
+    safe_stamp = ''.join(ch for ch in str(source_value) if ch.isdigit())[:14]
+    if safe_stamp:
+        return safe_stamp
+    fallback_time = item.created_at or datetime.utcnow()
+    return fallback_time.strftime('%d%m%Y%H%M%S')
 
 
 @dataclass
@@ -265,20 +281,38 @@ def _prepare_event_template(event: AutoCertificateEvent, headers: list[str]) -> 
     template_safe = event_root / 'template-safe.pptx'
     if not template_original.exists():
         raise AutoCertificateError('Template kegiatan tidak ditemukan pada server.')
+    if event.mapping_json is not None:
+        try:
+            mapping = json.loads(event.mapping_json or '{}')
+        except (TypeError, ValueError):
+            mapping = {}
+        placeholder_tokens = list(dict.fromkeys(target for target in mapping.values() if target))
+        if not placeholder_tokens:
+            shutil.copy2(template_original, template_safe)
+            return template_safe
+        build_pdf_safe_template(
+            str(template_original),
+            str(template_safe),
+            placeholders=placeholder_tokens,
+            working_dir=str(event_root / '_safe_build'),
+            soffice_path=current_app.config.get('SOFFICE_PATH', ''),
+            cleanup_working_dir=True,
+        )
+        return template_safe
+
+    # Kompatibilitas kegiatan lama yang belum mempunyai mapping dinamis.
     legacy_replacements = {}
     if event.name_column:
         legacy_replacements['{{nama}}'] = f'{{{{{event.name_column}}}}}'
     if event.institution_column:
         legacy_replacements['{{instansi}}'] = f'{{{{{event.institution_column}}}}}'
+    template_source = template_original
+    migrated_template = event_root / 'template-original-migrated.pptx'
     if legacy_replacements:
-        legacy_backup = event_root / 'template-original-legacy-backup.pptx'
-        migrated_template = event_root / 'template-original-migrated.pptx'
-        if not legacy_backup.exists():
-            shutil.copy2(template_original, legacy_backup)
         replace_placeholders(str(template_original), str(migrated_template), legacy_replacements)
-        shutil.move(str(migrated_template), str(template_original))
+        template_source = migrated_template
     build_pdf_safe_template(
-        str(template_original),
+        str(template_source),
         str(template_safe),
         placeholders=placeholder_tokens_from_headers(headers) + [PHOTO_PLACEHOLDER],
         working_dir=str(event_root / '_safe_build'),
@@ -291,11 +325,9 @@ def _prepare_event_template(event: AutoCertificateEvent, headers: list[str]) -> 
 def _generate_item_certificate(event: AutoCertificateEvent, item: AutoCertificateItem, template_safe_path: str) -> dict:
     runtime_root = ensure_dir(Path(current_app.config['RUNTIME_DIR']) / 'auto-events' / event.event_uuid)
     normalized_name = _normalize_certificate_name(item.participant_name)
-    base_name = slugify_filename(f'Sertifikat - {normalized_name}', default=f'sertifikat-{item.source_row_number}')
-    if item.submitted_at:
-        safe_stamp = ''.join(ch for ch in item.submitted_at if ch.isdigit())[:14]
-        if safe_stamp:
-            base_name = slugify_filename(f'{base_name} - {safe_stamp}', default=base_name)
+    base_name = slugify_filename(f'Sertifikat {normalized_name}', default=f'Sertifikat Peserta {item.source_row_number}')
+    safe_stamp = _filename_timestamp(item)
+    base_name = slugify_filename(f'{base_name} - {safe_stamp}', default=base_name)
     pptx_path = runtime_root / f'{uuid4().hex}-{base_name}.pptx'
     pdf_path = runtime_root / f'{pptx_path.stem}.pdf'
     photo_path = None
@@ -316,6 +348,18 @@ def _generate_item_certificate(event: AutoCertificateEvent, item: AutoCertificat
                 event.timestamp_column: item.submitted_at,
             }
             source_data = {key: value for key, value in fallback_values.items() if key}
+        try:
+            mapping = json.loads(event.mapping_json or '{}') if event.mapping_json is not None else None
+        except (TypeError, ValueError):
+            mapping = {}
+        if mapping is None:
+            text_replacements = build_text_replacements_from_row(source_data)
+        else:
+            text_replacements = {
+                target: ('' if source_data.get(source) is None else str(source_data.get(source)).strip())
+                for source, target in mapping.items()
+                if target and target != PHOTO_PLACEHOLDER
+            }
         image_replacements = {}
         photo_path = prepare_certificate_photo(
             item.photo_url,
@@ -330,7 +374,7 @@ def _generate_item_certificate(event: AutoCertificateEvent, item: AutoCertificat
         replace_placeholders(
             template_safe_path,
             str(pptx_path),
-            build_text_replacements_from_row(source_data),
+            text_replacements,
             image_replacements=image_replacements,
         )
         actual_pdf = convert_pptx_to_pdf_with_soffice(str(pptx_path), str(runtime_root), current_app.config.get('SOFFICE_PATH', ''))
@@ -388,18 +432,28 @@ def sync_event(event_id: int) -> EventSyncSummary:
             parsed = fetch_form_rows(event.spreadsheet_id, worksheet_name=event.worksheet_name)
             event.spreadsheet_title = parsed.spreadsheet_title
             event.worksheet_name = parsed.selected_sheet
-            detected_columns = _infer_columns_from_template(parsed.headers, str(Path(current_app.config['AUTO_EVENT_DIR']) / event.event_uuid / 'template-original.pptx'), detect_form_columns(parsed.headers))
-            if not event.name_column or event.name_column not in parsed.headers:
+            detected_columns = detect_form_columns(parsed.headers)
+            if event.mapping_json is None:
+                detected_columns = _infer_columns_from_template(
+                    parsed.headers,
+                    str(Path(current_app.config['AUTO_EVENT_DIR']) / event.event_uuid / 'template-original.pptx'),
+                    detected_columns,
+                )
+            if event.mapping_json is not None and event.name_column not in parsed.headers:
+                raise AutoCertificateError(
+                    f'Kolom sumber nama file "{event.name_column}" tidak ditemukan pada Google Sheet.'
+                )
+            if event.mapping_json is None and (not event.name_column or event.name_column not in parsed.headers):
                 event.name_column = detected_columns.get('name')
-            if not event.institution_column or event.institution_column not in parsed.headers:
+            if event.mapping_json is None and (not event.institution_column or event.institution_column not in parsed.headers):
                 event.institution_column = detected_columns.get('institution')
-            if not event.email_column or event.email_column not in parsed.headers:
+            if event.mapping_json is None and (not event.email_column or event.email_column not in parsed.headers):
                 event.email_column = detected_columns.get('email')
-            if not event.phone_column or event.phone_column not in parsed.headers:
+            if event.mapping_json is None and (not event.phone_column or event.phone_column not in parsed.headers):
                 event.phone_column = detected_columns.get('phone')
-            if not event.timestamp_column or event.timestamp_column not in parsed.headers:
+            if event.mapping_json is None and (not event.timestamp_column or event.timestamp_column not in parsed.headers):
                 event.timestamp_column = detected_columns.get('timestamp')
-            if not event.photo_column or event.photo_column not in parsed.headers:
+            if event.mapping_json is None and (not event.photo_column or event.photo_column not in parsed.headers):
                 event.photo_column = detected_columns.get('photo')
             if not event.name_column:
                 raise AutoCertificateError('Kolom nama peserta pada auto generate tidak terdeteksi dari sheet maupun placeholder template.')
@@ -414,6 +468,7 @@ def sync_event(event_id: int) -> EventSyncSummary:
                 if key in existing:
                     item = existing[key]
                     item.source_data_json = source_data_json
+                    item.submitted_at = (row.get(event.timestamp_column or '') or '').strip() or None
                     item.participant_name = (row.get(event.name_column or '') or '').strip() or None
                     item.institution_name = (row.get(event.institution_column or '') or '').strip() or None
                     item.email = (row.get(event.email_column or '') or '').strip() or None
